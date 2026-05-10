@@ -13,8 +13,9 @@
 
 ```bash
 # Your backend, once per chat session:
-curl https://augchatd.your-infra/sessions \
+curl -X POST https://augchatd.your-infra/sessions \
   --cert prod-client.pem --key prod-client.key \
+  -H 'Content-Type: application/json' \
   -d '{
     "user_id": "user_42",
     "system_prompt": "You are a helpful assistant.",
