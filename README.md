@@ -32,6 +32,26 @@ curl -X POST https://augchatd.your-infra/sessions \
 
 The browser never sees the LLM key, the MCP credentials, or the RAG endpoint. Only your server-issued JWT, valid for minutes.
 
+## Quick Start (demo mode)
+
+Try augchatd end-to-end without standing up a control plane or mTLS infrastructure. Demo mode loads a single fixed session from environment variables at boot.
+
+```bash
+docker run -p 8080:8080 \
+  -e AUGCHATD_MODE=demo \
+  -e DEMO_MODEL_PROVIDER=anthropic \
+  -e DEMO_MODEL_ID=claude-opus-4-7 \
+  -e DEMO_MODEL_API_KEY=sk-ant-... \
+  -e DEMO_SYSTEM_PROMPT="You are a helpful assistant." \
+  augchatd/augchatd
+
+open http://localhost:8080
+```
+
+Add `DEMO_MCP_SERVERS` and `DEMO_RAG_*` env vars to enable tools and retrieval. The browser fetches a session JWT from `GET /demo/jwt`, then chats normally.
+
+Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, and holds credentials in the process environment. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+
 ## How it works
 
 ```
