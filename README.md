@@ -133,7 +133,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - It does **not manage users**. Your software does, and tells augchatd who's connecting per session.
 - It does **not enforce permissions**. Your software decides what each session can access (which MCP servers, which RAG indexes) and passes that as setup config.
 - It does **not host MCP servers**. It's a *client* to MCP servers you operate.
-- It does **not connect to MCP servers over stdio**. HTTP/SSE only — MCPs must be reachable over the network.
+- It does **not connect to MCP servers over stdio**. HTTP/SSE only — MCPs must be reachable over the network. Most public MCP servers today are stdio-only; to use them with augchatd, wrap them in a small HTTP/SSE bridge (e.g. `mcpo`) and point augchatd at the bridge's URL.
 - It does **not ingest, chunk, or embed documents**. It only queries the OpenSearch cluster. Populate the cluster with any pipeline you like; we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
 - It does **not encrypt conversation history client-side** before writing to S3. Configure server-side encryption (SSE-S3, SSE-KMS, or equivalent) on the bucket you provide. Client-side encryption is out of scope.
