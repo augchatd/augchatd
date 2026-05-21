@@ -18,19 +18,23 @@ curl -X POST https://augchatd.your-infra/sessions \
 ```
 
 ```html
-<!-- In your app: drop the JWT into an iframe, done. -->
-<iframe id="chat" src="https://chat-ui.your-infra/"></iframe>
+<!-- In your app: embed augchatd's hosted UI, then hand it the JWT. -->
+<iframe id="chat" src="https://chat-ui.augchatd.io/"></iframe>
 <script>
   document.getElementById('chat').addEventListener('load', () => {
     document.getElementById('chat').contentWindow.postMessage(
-      { type: 'augchatd:jwt', jwt: jwtFromYourBackend },
-      'https://chat-ui.your-infra'
+      {
+        type: 'augchatd:jwt',
+        jwt: jwtFromYourBackend,
+        backend_url: 'https://augchatd.your-infra'
+      },
+      'https://chat-ui.augchatd.io'
     );
   });
 </script>
 ```
 
-The browser never sees the LLM key, the MCP credentials, or the RAG endpoint. Only your server-issued JWT, valid for minutes.
+The browser never sees the LLM key, the MCP credentials, or the RAG endpoint. Only your server-issued JWT, valid for minutes. The chat UI itself is hosted by augchatd and built on [assistant-ui](https://github.com/assistant-ui/assistant-ui) — you embed it, you don't build or host it.
 
 ## Quick Start (demo mode)
 
@@ -48,7 +52,7 @@ docker run -p 8080:8080 \
 open http://localhost:8080
 ```
 
-Add `DEMO_MCP_SERVERS` and `DEMO_RAG_*` env vars to enable tools and retrieval. The browser fetches a session JWT from `GET /demo/jwt`, then chats normally.
+Add `DEMO_MCP_SERVERS` and `DEMO_RAG_*` env vars to enable tools and retrieval. The demo image bundles a local copy of the chat UI on the same port (so you don't need to load the hosted one); the browser fetches a session JWT from `GET /demo/jwt`, then chats normally.
 
 Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, and holds credentials in the process environment. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
 
@@ -73,8 +77,9 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
                                           │
                                           ▼
    ┌──────────────────────────┐    3. chat (JWT)    ┌──────────────────────────┐
-   │  Your software's UI      │ ──────────────────► │         augchatd         │
-   │  (browser / iframe)      │ ◄── streamed reply ─│  (tool-use loop server)  │
+   │  augchatd hosted UI      │ ──────────────────► │         augchatd         │
+   │  (assistant-ui, iframed  │ ◄── streamed reply ─│  (tool-use loop server)  │
+   │   in your software)      │                     │                          │
    └──────────────────────────┘                     └──────────────────────────┘
                                                                 │
                                                                 ▼
@@ -87,7 +92,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 **Two calls do everything:**
 
 1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with these MCP servers, this RAG endpoint, this LLM and key, this system prompt." augchatd returns a short-lived JWT.
-2. **Browser → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG endpoint server-side. Browser only sees the streamed reply and sanitized tool indicators.
+2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG endpoint server-side. The UI (assistant-ui, hosted by augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
 
 ## Stop / Start
 
@@ -107,7 +112,8 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - Runs the **tool-use loop** (LLM ↔ MCP tool calls ↔ RAG queries) server-side
 - Holds **per-session credentials** received from your software. Never persisted in plaintext logs, never sent to clients.
 - Stores **conversation history** (live + cold) so users can resume later
-- Exposes a **minimal browser API**: list/create/delete conversations, send messages
+- Ships a **hosted chat UI** (built on [assistant-ui](https://github.com/assistant-ui/assistant-ui)) you embed via `<iframe>`. No frontend code, build pipeline, or asset hosting on your side.
+- Exposes a **minimal browser API** (consumed by the hosted UI): list/create/delete conversations, send messages
 - **Isolates tenants** via mTLS client certificate. Different deployments of your software (or different SaaS tenants) get cryptographic separation, no shared keys.
 
 ## What augchatd does NOT do
@@ -115,23 +121,21 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - It does **not manage users**. Your software does, and tells augchatd who's connecting per session.
 - It does **not enforce permissions**. Your software decides what each session can access (which MCP servers, which RAG indexes) and passes that as setup config.
 - It does **not host MCP servers**. It's a *client* to MCP servers you operate.
-- It does **not ship a chat UI**. See [UI integration](#ui-integration) below for the recommended path.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
 - It does **not implement long-term memory or planning agents**. It's a tool-use loop, not an autonomous agent framework.
 
 ## UI integration
 
-augchatd exposes a JWT-authenticated streaming chat API. **You can use any frontend** that streams tokens and renders tool calls; augchatd doesn't care.
+augchatd ships a hosted chat UI at `https://chat-ui.augchatd.io/`, built on [assistant-ui](https://github.com/assistant-ui/assistant-ui). You embed it as an `<iframe>` in your application — we host and version it, so there's no bundle to maintain, no asset hosting on your side, and no design system to keep in sync.
 
-We recommend [assistant-ui](https://github.com/assistant-ui/assistant-ui) as the reference UI library: it handles streaming, tool-call rendering, conversation lists, and markdown out of the box.
+The flow:
 
-**For the fastest path to a working PoC**, embed the chat as an `<iframe>` inside your application:
+1. Your backend calls `POST /sessions` on your augchatd backend to mint a short-lived JWT.
+2. Your application loads `https://chat-ui.augchatd.io/` in an `<iframe>`.
+3. Your application passes the JWT and your backend URL to the iframe via `postMessage` once it signals readiness.
+4. The iframe connects to your augchatd backend over the JWT API and streams the conversation.
 
-1. Your backend calls `POST /sessions` on augchatd to mint a short-lived JWT.
-2. Your application loads the chat UI in an `<iframe>`.
-3. Your application passes the JWT to the iframe via `postMessage` once it signals readiness.
-
-This gets you a working chat in hours, with no changes to your app's framework, bundle, or build pipeline. And it isn't just a stepping stone: many integrations stay on the iframe path indefinitely. If you ever need more control, the same API supports native integrations too.
+The hosted UI is the supported frontend. The browser-facing JWT API is the contract between the hosted UI and the backend — not a public surface for custom clients.
 
 ## Why these constraints
 
