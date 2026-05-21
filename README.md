@@ -24,11 +24,15 @@ curl -X POST https://augchatd.your-infra/sessions \
 <!-- In your app: embed augchatd's bundled UI, then hand it the JWT. -->
 <iframe id="chat" src="https://augchatd.your-infra/"></iframe>
 <script>
-  document.getElementById('chat').addEventListener('load', () => {
-    document.getElementById('chat').contentWindow.postMessage(
-      { type: 'augchatd:jwt', jwt: jwtFromYourBackend },
-      'https://augchatd.your-infra'
-    );
+  // augchatd's UI posts {type:'augchatd:ready'} when booted; reply with the JWT.
+  window.addEventListener('message', (e) => {
+    if (e.origin !== 'https://augchatd.your-infra') return;
+    if (e.data?.type === 'augchatd:ready') {
+      document.getElementById('chat').contentWindow.postMessage(
+        { type: 'augchatd:jwt', jwt: jwtFromYourBackend },
+        'https://augchatd.your-infra'
+      );
+    }
   });
 </script>
 ```
@@ -122,7 +126,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 
 ### Storage
 
-- **Hot**: internal DB managed by augchatd. One DB per mTLS tenant identifier, created when the first session for that tenant connects, destroyed only after a successful flush to cold.
+- **Hot**: internal SQLite database managed by augchatd (using Bun's embedded SQLite — no external DB to operate). One database per mTLS tenant identifier, created when the first session for that tenant connects, destroyed only after a successful flush to cold.
 - **Cold**: your S3-compatible bucket, passed in per session in the setup payload.
 - **Flush triggers**: session disconnect, or 5 minutes of inactivity. On session resume, history is hydrated from S3 if no longer hot.
 - **Durability**: augchatd tests S3 at session creation (setup fails if it can't write). If a later flush fails, the session keeps running and augchatd retries until persistence succeeds — hot data is not dropped until cold has it.
@@ -155,7 +159,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - It does **not manage users**. Your software does, and tells augchatd who's connecting per session.
 - It does **not enforce permissions**. Your software decides what each session can access (which MCP servers, which RAG indexes) and passes that as setup config.
 - It does **not host MCP servers**. It's a *client* to MCP servers you operate.
-- It does **not connect to MCP servers over stdio**. HTTP/SSE only — MCPs must be reachable over the network. Most public MCP servers today are stdio-only; to use them with augchatd, wrap them in a small HTTP/SSE bridge (e.g. `mcpo`) and point augchatd at the bridge's URL.
+- It does **not connect to MCP servers over stdio**. HTTP/SSE only — stdio assumes the MCP runs co-located with the client, which doesn't fit a remote multi-tenant daemon whose per-session contract is URL + auth. Most public MCPs today are stdio-only; to use them with augchatd, wrap them in a small HTTP/SSE bridge (e.g. `mcpo`) — the bridge converts the local-only stdio model into the network contract augchatd needs.
 - It does **not ingest, chunk, or embed documents**. When RAG is enabled, augchatd only queries the backend (OpenSearch or pgvector) the session provides. Populate it with any pipeline you like; for OpenSearch we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
 - It does **not encrypt conversation history client-side** before writing to S3. Configure server-side encryption (SSE-S3, SSE-KMS, or equivalent) on the bucket you provide. Client-side encryption is out of scope.
@@ -186,7 +190,7 @@ augchatd is opinionated about staying small. Your software already knows which O
 
 Early. OSS, currently maintained by a single author. The API and storage layout may change before `1.0`. The `augchatd/augchatd` Docker image referenced in Quickstart is **planned but not yet published**.
 
-Built with Bun, Hono, and TypeScript. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). When RAG is enabled, retrieval runs against OpenSearch (hybrid BM25 + kNN, native) or pgvector (vector-only out of the box; BYO `tsvector` for lexical).
+Built with Bun, Hono, and TypeScript. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). Hot conversation storage uses Bun's embedded SQLite, one database per mTLS tenant — no external DB or cache required for the daemon to run. When RAG is enabled, retrieval runs against OpenSearch (hybrid BM25 + kNN, native) or pgvector (vector-only out of the box; BYO `tsvector` for lexical).
 
 ## License
 
