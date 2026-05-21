@@ -12,7 +12,7 @@ curl -X POST https://augchatd.your-infra/sessions \
     "system_prompt": "You are a helpful assistant.",
     "model":       { "provider": "anthropic", "model_id": "claude-opus-4-7", "api_key": "sk-ant-..." },
     "mcp_servers": [ { "url": "https://your-mcp/",    "auth": { "bearer": "..." } } ],
-    "tools":       { "rag": { "endpoint": "https://your-search/", "indexes": ["docs"] } }
+    "tools":       { "rag": { "cluster": "https://your-opensearch/", "indexes": ["docs"] } }
   }'
 # → { "session_id": "...", "jwt": "eyJ...", "expires_at": "..." }
 ```
@@ -66,7 +66,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
                                           │
                        1. setup session (mTLS, server-to-server)
                           { user_id, system_prompt, model+key,
-                            mcp_servers, rag_endpoint+creds }
+                            mcp_servers, rag_cluster+creds }
                                           │
                                           ▼
                             ┌──────────────────────────┐
@@ -91,7 +91,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 
 **Two calls do everything:**
 
-1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with these MCP servers, this RAG endpoint, this LLM and key, this system prompt." augchatd returns a short-lived JWT.
+1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with these MCP servers, this OpenSearch cluster, this LLM and key, this system prompt." augchatd returns a short-lived JWT.
 2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG endpoint server-side. The UI (assistant-ui, hosted by augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
 
 ## Stop / Start
@@ -109,11 +109,12 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 
 ## What augchatd does
 
-- Runs the **tool-use loop** (LLM ↔ MCP tool calls ↔ RAG queries) server-side
+- Runs the **tool-use loop** server-side, combining MCP tools, built-in tools (e.g. RAG retrieval), and the LLM response.
+- Runs **hybrid retrieval** (BM25 + kNN) against your OpenSearch cluster, per-session and scoped to the indexes your software allows.
 - Holds **per-session credentials** received from your software. Never persisted in plaintext logs, never sent to clients.
 - Stores **conversation history** (live + cold) so users can resume later
 - Ships a **hosted chat UI** (built on [assistant-ui](https://github.com/assistant-ui/assistant-ui)) you embed via `<iframe>`. No frontend code, build pipeline, or asset hosting on your side.
-- Exposes a **minimal browser API** (consumed by the hosted UI): list/create/delete conversations, send messages
+- Exposes a **minimal browser API** (consumed by the hosted UI): list/create/delete conversations, send messages. Streaming follows the assistant-ui native protocol (Vercel AI SDK data stream).
 - **Isolates tenants** via mTLS client certificate. Different deployments of your software (or different SaaS tenants) get cryptographic separation, no shared keys.
 
 ## What augchatd does NOT do
@@ -121,6 +122,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - It does **not manage users**. Your software does, and tells augchatd who's connecting per session.
 - It does **not enforce permissions**. Your software decides what each session can access (which MCP servers, which RAG indexes) and passes that as setup config.
 - It does **not host MCP servers**. It's a *client* to MCP servers you operate.
+- It does **not ingest, chunk, or embed documents**. It only queries the OpenSearch cluster. Populate the cluster with any pipeline you like; we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
 - It does **not implement long-term memory or planning agents**. It's a tool-use loop, not an autonomous agent framework.
 
@@ -144,6 +146,8 @@ augchatd is opinionated about staying small. Authentication, permissions, user m
 ## Status
 
 Early. The API and storage layout may change before `1.0`. Not yet published to a registry.
+
+Built with Bun, Hono, and TypeScript. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). RAG runs on OpenSearch with hybrid search (BM25 + kNN).
 
 ## License
 
