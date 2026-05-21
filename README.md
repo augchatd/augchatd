@@ -1,5 +1,7 @@
 # augchatd
 
+*augmented chat daemon — chat augmented with your users' own tools (MCP) and their own data (RAG), enforced per session.*
+
 > Per-user MCP credentials and per-user RAG scoping for LLM chat in your app. Provisioned by your existing auth at session creation. Never exposed to the browser.
 
 ```bash
