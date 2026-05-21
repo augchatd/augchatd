@@ -112,10 +112,11 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with this LLM and key, this S3 bucket for cold storage, this system prompt, and — if the user is allowed — these MCP servers and this RAG backend." augchatd returns a short-lived JWT.
 2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG cluster server-side. The UI (assistant-ui, bundled with augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
 
-### JWT details
+### Token & credential refresh
 
-- Validation is signature-only — no DB lookup per message, so streaming doesn't pay validation cost per token.
+- JWT validation is signature-only — no DB lookup per message, so streaming doesn't pay validation cost per token.
 - If a JWT expires mid-conversation, the next message returns 401; the embedded UI requests a new JWT from your backend and resumes — the conversation state survives in storage (hot DB and your S3), not in the token.
+- **The same flow handles MCP credential expiry**: if an upstream MCP returns 401 (e.g. the user's OAuth token expired), augchatd surfaces it as a 401 to the UI, which triggers the same refresh path. Your backend re-mints the session with currently-valid credentials from your token vault; augchatd holds no refresh logic of its own. One mechanism for both kinds of expiry, your backend remains the single source of truth.
 
 ### Storage
 
