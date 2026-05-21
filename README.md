@@ -13,7 +13,7 @@ curl -X POST https://augchatd.your-infra/sessions \
     "model":       { "provider": "anthropic", "model_id": "claude-opus-4-7", "api_key": "sk-ant-..." },
     "mcp_servers": [ { "url": "https://your-mcp/",    "auth": { "bearer": "..." } } ],
     "tools":       { "rag": { "cluster": "https://your-opensearch/", "indexes": ["docs"] } },
-    "storage":     { "s3": "s3://AKIA...@your-bucket/", "db": "postgres://..." }
+    "storage":     { "s3": "s3://AKIA...@your-bucket/" }
   }'
 # → { "session_id": "...", "jwt": "eyJ...", "expires_at": "..." }
 ```
@@ -64,7 +64,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
                        1. setup session (mTLS, server-to-server)
                           { user_id, system_prompt, model+key,
                             mcp_servers, rag_cluster+creds,
-                            storage (s3 + db) }
+                            s3_bucket+creds }
                                           │
                                           ▼
                             ┌──────────────────────────┐
@@ -90,13 +90,20 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 
 **Two calls do everything:**
 
-1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with these MCP servers, this OpenSearch cluster, this LLM and key, this storage, this system prompt." augchatd returns a short-lived JWT.
+1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with these MCP servers, this OpenSearch cluster, this LLM and key, this S3 bucket for cold storage, this system prompt." augchatd returns a short-lived JWT.
 2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG cluster server-side. The UI (assistant-ui, bundled with augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
 
-**JWT details:**
+### JWT details
 
 - Validation is signature-only — no DB lookup per message, so streaming doesn't pay validation cost per token.
-- If a JWT expires mid-conversation, the next message returns 401; the embedded UI requests a new JWT from your backend and resumes — the conversation state survives because history is in your storage, not the token.
+- If a JWT expires mid-conversation, the next message returns 401; the embedded UI requests a new JWT from your backend and resumes — the conversation state survives in storage (hot DB and your S3), not in the token.
+
+### Storage
+
+- **Hot**: internal DB managed by augchatd. One DB per mTLS tenant identifier, created when the first session for that tenant connects, destroyed only after a successful flush to cold.
+- **Cold**: your S3-compatible bucket, passed in per session in the setup payload.
+- **Flush triggers**: session disconnect, or 5 minutes of inactivity. On session resume, history is hydrated from S3 if no longer hot.
+- **Durability**: augchatd tests S3 at session creation (setup fails if it can't write). If a later flush fails, the session keeps running and augchatd retries until persistence succeeds — hot data is not dropped until cold has it.
 
 ## Stop / Start
 
@@ -116,10 +123,10 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - Runs the **tool-use loop** server-side, combining MCP tools, built-in tools (e.g. RAG retrieval), and the LLM response.
 - Runs **hybrid retrieval** (BM25 + kNN) against your OpenSearch cluster, per-session and scoped to the indexes your software allows.
 - Holds **per-session credentials** received from your software. Never persisted in plaintext logs, never sent to clients.
-- **Tier-stores conversation history**: hot in a session DB during active use, cold in your S3-compatible bucket. On session resume, history is hydrated from S3; on update, writes flush back to S3. Both the bucket and DB are passed in per session — no shared storage across tenants.
+- **Tier-stores conversation history**: hot in an internal DB managed by augchatd (one DB per mTLS tenant, ephemeral), cold in your S3-compatible bucket (passed in per session). See [Storage](#storage) above for lifecycle and durability semantics.
 - Ships a **bundled chat UI** (built on [assistant-ui](https://github.com/assistant-ui/assistant-ui)) served on the same origin as the API. You embed it as an `<iframe>` — no separate UI to host, no asset pipeline on your side.
 - Exposes a **minimal browser API** (consumed by the bundled UI): list/create/delete conversations, send messages. Streaming follows the assistant-ui native protocol (Vercel AI SDK data stream).
-- **Isolates tenants** via mTLS client certificate. Different deployments of your software (or different SaaS tenants) get cryptographic separation, no shared keys.
+- **Isolates tenants** logically within a single process: mTLS at setup, JWT at chat time, per-session credentials in memory, per-tenant storage by configuration. For mutually hostile tenants, deploy one augchatd process per tenant.
 
 ## What augchatd does NOT do
 
@@ -129,6 +136,7 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - It does **not connect to MCP servers over stdio**. HTTP/SSE only — MCPs must be reachable over the network.
 - It does **not ingest, chunk, or embed documents**. It only queries the OpenSearch cluster. Populate the cluster with any pipeline you like; we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
+- It does **not encrypt conversation history client-side** before writing to S3. Configure server-side encryption (SSE-S3, SSE-KMS, or equivalent) on the bucket you provide. Client-side encryption is out of scope.
 - It does **not implement long-term memory or planning agents**. It's a tool-use loop, not an autonomous agent framework.
 - It does **not bill or meter LLM usage**. Your customer's LLM key is charged directly by the provider.
 - It does **not enforce per-tenant rate limits**. If you need throttling, do it at your edge before minting the session.
