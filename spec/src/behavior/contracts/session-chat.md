@@ -27,7 +27,7 @@ links:
 
 Given a valid JWT, a target `conversation_id`, and an end-user message, augchatd runs a server-side **tool-use loop**:
 
-1. **Snapshot** the **conversation's active connector set** at the start of the turn — read from the conversation's saved per-connector active flags, reconciled against the session's resolved scope (see [adr-0010](../../architecture/adrs/0010-unified-connector-model.md) and [contract-connector-toggle](connector-toggle.md)).
+1. **Snapshot** the **conversation's active connector set** at the start of the turn — read from the conversation's saved per-connector active flags, reconciled against the session's resolved scope (see [adr-0010](../../architecture/adrs/0010-unified-connector-model.md) and [contract-connector-toggle](connector-toggle.md)). The snapshot is captured **once per `POST /chat` call** and held for the **entire** tool-use loop of that request — including across multiple LLM round-trips for tool calls within the same request. Toggles arriving after the snapshot is taken do not affect the in-flight turn.
 2. Send conversation context + message to the LLM, exposing only the tools backed by **active connectors for this conversation**.
 3. If the LLM emits tool calls, augchatd dispatches each to the responsible connector server-side:
    - **MCP-type connectors** with that connector's credentials (see [mcp-invocation](mcp-invocation.md))

@@ -99,6 +99,21 @@ Given a chat turn is in progress for cid_A and the LLM has already issued a tool
   And the next chat turn in cid_A observes rag_internal as inactive and does not expose it
 ```
 
+## Scenario — integrator changes `default_active` without affecting existing conversations
+
+```
+Given my session was provisioned with mcp_github (default_active: true)
+  And I created cid_A; the conversation snapshotted mcp_github with active: true at creation
+  And I never explicitly toggled mcp_github in cid_A
+ When the backend later re-mints the session with mcp_github (default_active: FALSE)
+  And I reload cid_A
+ Then GET /conversations/cid_A/connectors shows mcp_github: active: true
+  (the snapshot taken at cid_A creation is honored; later changes to default_active do not retroactively shift existing conversations)
+ When I create a brand-new cid_B
+ Then GET /conversations/cid_B/connectors shows mcp_github: active: false
+  (the new default_active is snapshotted for cid_B at its creation)
+```
+
 ## Scenario — integrator removed a connector between sessions
 
 ```

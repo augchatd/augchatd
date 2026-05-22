@@ -4,7 +4,7 @@ type: technical-contract
 status: proposed
 evidence:
   - source: README.md
-    section: "Connectors (per-conversation toggle)"
+    section: "README header (connectors paragraph)"
 links:
   - relation: supports
     target: contract-connector-toggle
@@ -40,33 +40,23 @@ Sets the active state of one connector **for one conversation**. The change is p
 
 ## Response — success
 
-`200 OK`
-`Content-Type: application/json`
+`204 No Content`
 
-```json
-{
-  "descriptive_id": "rag_public",
-  "name":           "Base de conhecimentos pública",
-  "type":           "rag",
-  "active":         true
-}
-```
+No body. The caller already knows `descriptive_id`, `name`, and `type` (from the prior `GET /conversations/:cid/connectors`); the only mutating value is the boolean it just sent, and a successful `204` confirms it was committed.
 
-Returns the same single-entry shape as one element of [`GET /conversations/:cid/connectors`](http-get-conversation-connectors.md).
+## Concurrency
 
-## Persistence
-
-The new active state is written to the conversation's storage on the same path as messages (hot SQLite → cold S3 on flush). A subsequent session that loads this conversation sees the saved state — the user does not have to retoggle.
+**Last write wins.** augchatd does not coordinate concurrent `PUT`s against the same `(conversation_id, descriptive_id)` (e.g. two browser tabs toggling at once). The bundled UI must not assume its `PUT` reflects the absolute final state — re-fetch via `GET /conversations/:cid/connectors` to observe the committed value when concurrent writers are expected.
 
 ## Idempotency
 
-A `PUT` with `{ active: <current state> }` is a no-op and returns 200 with the unchanged state. Safe to retry.
+A `PUT` with `{ active: <current state> }` is a no-op (still returns `204`). Safe to retry.
 
 ## Response — failure modes
 
 - `400` — malformed body (missing `active`, wrong type, extra fields).
 - `401` — invalid/expired JWT.
-- `404` — `:conversation_id` unknown for this user, or `:descriptive_id` not in this session's resolved scope.
+- `404` — `:conversation_id` unknown for this user, `:descriptive_id` not in this session's resolved scope, **or** the conversation was deleted concurrently. The delete and the rejection are atomic from the caller's point of view: a `204` means the value was committed to a still-live conversation; a `404` means nothing was changed.
 
 ## Effect on in-flight chat turns
 

@@ -4,7 +4,7 @@ type: adr
 status: proposed
 evidence:
   - source: README.md
-    section: "Connectors (session payload) / What augchatd does"
+    section: "README header (connectors paragraph) / What augchatd does"
 links:
   - relation: refines
     target: req-001-per-user-credentials
@@ -81,13 +81,21 @@ Active state is persisted **alongside the conversation it belongs to** — in th
 2. **Per-conversation independence.** Conversations of the same user are independent — the user can have one conversation scoped to a single RAG (e.g. "public KB only") while another has all connectors on.
 3. **Stays consistent with the "no own vault" promise.** augchatd does not introduce a new persistence surface — active state rides the existing conversation storage layer (the integrator's S3 ultimately owns it for cold).
 
+**The saved state is captured once, at first observation.** `default_active` is only consulted when a connector first enters a conversation's purview — at `POST /conversations` for connectors in scope at creation, or on the first `GET /conversations/:cid/connectors` / `POST /chat` after a new connector is added to the resolved scope. Once captured, the saved flag is the authoritative value; later changes to `default_active` on the integrator side do **not** retroactively affect existing conversations. Only explicit `PUT /conversations/:cid/connectors/:descriptive_id` calls mutate it after the snapshot.
+
 **Reconciliation rules when the resolved scope changes between sessions:**
 
-| Connector situation | Active state on reload |
+| Connector situation | Behavior |
 | --- | --- |
-| In saved state AND in current scope | Restored to the saved flag |
-| In current scope AND not in saved state | Starts at the connector's current `default_active` |
-| In saved state AND no longer in current scope | **Permanently dropped.** If the integrator re-adds the same `descriptive_id` later, it starts fresh at `default_active` — the previously-saved flag is **not** restored |
+| In current scope AND in saved state | Return the saved flag |
+| In current scope AND not in saved state (new conversation, or connector newly added to scope) | Snapshot the current `default_active` into the saved state at the moment of observation; return that value |
+| In saved state AND no longer in current scope | **Permanently dropped** (saved state cleaned up). If the integrator re-adds the same `descriptive_id` later, it follows the "not in saved state" rule above — the previously-saved flag is **not** restored |
+
+### Stability of `descriptive_id`
+
+Active-state persistence keys solely on `descriptive_id`. If the integrator changes what a `descriptive_id` points to between sessions (e.g. `rag_internal` first points at OpenSearch index `eng-docs-2025`; a later session reuses the same `descriptive_id` for `eng-docs-confidential`), every conversation that previously toggled `rag_internal` silently keeps its saved flag — now applied to a different upstream.
+
+> **Integrators must treat `descriptive_id` as a stable semantic identity.** When the upstream the connector represents changes meaningfully (different index set, different OAuth scope, different MCP server, different vendor), **use a new `descriptive_id`**. Reusing a `descriptive_id` for a different upstream is the equivalent of reusing a database primary key for a different row.
 
 ## Consequences
 

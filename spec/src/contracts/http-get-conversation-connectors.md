@@ -4,7 +4,7 @@ type: technical-contract
 status: proposed
 evidence:
   - source: README.md
-    section: "Connectors (per-conversation active state)"
+    section: "README header (connectors paragraph)"
 links:
   - relation: supports
     target: contract-connector-toggle
@@ -48,12 +48,9 @@ The `:conversation_id` path parameter is a conversation owned by the current ses
 ]
 ```
 
-The `active` flag for each entry comes from:
+The `active` flag for each entry comes from the conversation's **saved state**. The saved state is captured the first time the connector is observed in the conversation's purview (snapshotting the current `default_active`) and is thereafter authoritative — see [adr-0010, "Persistence of active state"](../architecture/adrs/0010-unified-connector-model.md#persistence-of-active-state-per-conversation) for full reconciliation rules when the resolved scope changes.
 
-- the conversation's **saved state** for that connector, if present and the connector is still in the session's resolved scope, **or**
-- the connector's **`default_active`** from the session payload, if the conversation has no saved state for that connector (i.e. the conversation is new, or the connector is new since the conversation was last touched).
-
-Connectors that were saved in the conversation but are **no longer in the session's resolved scope** are dropped from the response **and from the conversation's saved state** — they do not reappear with their old flag if the integrator re-adds them later (they start fresh at `default_active`).
+Connectors not in the current resolved scope are omitted from the response.
 
 ## Response — failure modes
 

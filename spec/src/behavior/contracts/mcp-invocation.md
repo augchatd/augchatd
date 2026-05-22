@@ -7,7 +7,7 @@ evidence:
   - source: README.md@e562b2b
     section: "What augchatd does (tool-use loop) / What augchatd does NOT do (stdio)"
   - source: README.md
-    section: "Connectors (MCP-type connector)"
+    section: "README header (connectors paragraph)"
 links:
   - relation: satisfies
     target: req-001-per-user-credentials

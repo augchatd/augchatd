@@ -23,8 +23,8 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 2. **Does not accept `POST /sessions`** (the endpoint is not exposed — see [Failure modes](#failure-modes) below). The demo session is bound **at process boot from environment variables**, not minted per request.
 3. Loads a **single fixed session** from environment variables:
    - `DEMO_MODEL_PROVIDER`, `DEMO_MODEL_ID`, `DEMO_MODEL_API_KEY`, `DEMO_SYSTEM_PROMPT` — required for the model.
-   - `DEMO_CONNECTORS` — optional, a JSON-encoded `connectors[]` array (same shape as the production session payload's `connectors[]`). Absent ⇒ no connectors (plain chat).
-   - `DEMO_S3_URI` — required, the cold-storage bucket (same format as the production `storage.s3` field).
+   - `DEMO_CONNECTORS` (a JSON string) **or** `DEMO_CONNECTORS_FILE` (a filesystem path to a JSON file with the same shape) — optional. Same shape as the production session payload's `connectors[]`. Absent ⇒ no connectors (plain chat). The file variant is recommended whenever the JSON carries credentials (env vars leak to shell history, process listings, and committed compose files).
+   - `DEMO_S3_URI` — optional, the cold-storage bucket (same format as the production `storage.s3` field). Absent ⇒ hot storage only; conversations live for the lifetime of the process and are lost on restart. Acceptable for local demos.
 4. Serves a **`GET /demo/jwt`** endpoint (no auth) that returns a JWT for that fixed session.
 5. Serves the bundled UI on the same port; the UI fetches the JWT from `GET /demo/jwt` instead of receiving it via `postMessage` from an integrator.
 6. Behaves identically to production mode from the chat path onward — same tool-use loop, same connector dispatch, same storage rules.
@@ -62,6 +62,9 @@ Calls to either return `404 Not Found`. The integrator-facing surface is closed 
 - Boot without demo mode → `GET /demo/jwt` is unavailable.
 - In demo mode, `POST /sessions` (with or without mTLS) returns 404.
 - In demo mode, `DELETE /sessions/:id` returns 404.
-- `DEMO_CONNECTORS` with a valid JSON `connectors[]` array → those connectors are present at chat time and toggleable via `GET/PUT /connectors`.
-- `DEMO_CONNECTORS` malformed → process fails to boot with a clear error (no silent fallback to no-connectors).
+- `DEMO_CONNECTORS` with a valid JSON `connectors[]` array → those connectors are present at chat time and toggleable per conversation.
+- `DEMO_CONNECTORS_FILE` pointing to a readable JSON file → same as above; the file's content is the array.
+- Both `DEMO_CONNECTORS` and `DEMO_CONNECTORS_FILE` set → process fails to boot with a clear error (no precedence; integrator must pick one).
+- Either variant malformed → process fails to boot with a clear error (no silent fallback to no-connectors).
+- `DEMO_S3_URI` absent → boot succeeds; the flush path is disabled and conversation history is hot-only for the lifetime of the process.
 - Graduation: same binary boots production by setting different env / running mTLS — no separate build.

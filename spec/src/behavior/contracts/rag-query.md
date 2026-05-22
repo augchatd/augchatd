@@ -7,7 +7,7 @@ evidence:
   - source: README.md@e562b2b
     section: "What augchatd does (Runs retrieval) / What augchatd does NOT do (ingest)"
   - source: README.md
-    section: "Connectors (RAG-type connector)"
+    section: "README header (connectors paragraph)"
 links:
   - relation: satisfies
     target: req-002-rag-scoping

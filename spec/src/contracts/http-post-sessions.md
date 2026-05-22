@@ -75,10 +75,10 @@ links:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `descriptive_id` | string | Unique within the session. Used by the browser to address the connector (e.g. for toggling) and by augchatd in tool-call indicators. Examples: `"rag_public"`, `"mcp_schooldrive_user_session"`. |
+| `descriptive_id` | string | Unique within the session. Used by the browser to address the connector (e.g. for toggling) and by augchatd in tool-call indicators. Examples: `"rag_public"`, `"mcp_schooldrive_user_session"`. **Treat this as a stable semantic identity across sessions** — active-state persistence keys solely on `descriptive_id`, so reusing it for a different upstream silently inherits the user's saved flag (see [adr-0010, "Stability of descriptive_id"](../architecture/adrs/0010-unified-connector-model.md#stability-of-descriptive_id)). |
 | `name` | string | Human-friendly display label shown by the bundled UI. |
 | `type` | enum | `"mcp"` \| `"rag"`. Determines the per-type fields required. |
-| `default_active` | boolean | Initial active state for this connector when the session starts. |
+| `default_active` | boolean | Initial active state for the connector. Captured into the conversation's saved state at first observation; later changes to `default_active` do **not** retroactively affect conversations that have already snapshotted it (see [adr-0010](../architecture/adrs/0010-unified-connector-model.md#persistence-of-active-state-per-conversation)). |
 
 ### Connector entry — `type: "mcp"`
 
