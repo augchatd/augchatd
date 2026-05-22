@@ -1,4 +1,5 @@
 import type { DemoModeConfig } from "./env.ts";
+import { parseConnectors, type Connector } from "./connectors.ts";
 
 /**
  * In-memory session registry. Source of truth for credentials and scope
@@ -16,12 +17,8 @@ export interface SessionRecord {
     api_key: string;
   };
   s3_uri: string | undefined;
-  /**
-   * Raw connectors JSON if provided. Parsing/dispatch comes with the
-   * connector integration; for now, just retained so future work can
-   * use it.
-   */
-  connectors_raw: string | undefined;
+  /** Typed connectors[]; empty if the session didn't declare any. */
+  connectors: Connector[];
 }
 
 const registry = new Map<string, SessionRecord>();
@@ -44,7 +41,7 @@ export function bindDemoSession(
     system_prompt: config.system_prompt,
     model: config.model,
     s3_uri: config.s3_uri,
-    connectors_raw: config.connectors_raw,
+    connectors: parseConnectors(config.connectors_raw),
   };
   registerSession(record);
   return record;
