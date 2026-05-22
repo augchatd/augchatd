@@ -1,0 +1,65 @@
+---
+id: domain-bounded-contexts
+type: domain
+status: proposed
+evidence:
+  - source: README.md@e562b2b
+    section: "How it works / What augchatd does / Storage"
+---
+
+# Bounded contexts
+
+augchatd is small. Five contexts cover everything in the README.
+
+## 1. Session lifecycle
+
+Owns: minting a session from a setup payload, issuing a JWT, validating JWT on chat requests, re-minting after expiry, releasing on disconnect.
+
+Boundaries:
+- Receives `POST /sessions` (mTLS) from the integrator's backend.
+- Returns `{ session_id, jwt, expires_at }`.
+- Holds session credentials in memory for the session's lifetime.
+
+Does **not** decide policy (which user, which MCPs, which indexes) — the integrator supplies that.
+
+## 2. Chat (tool-use loop)
+
+Owns: turning an end-user message into a streamed reply, looping the LLM with any provisioned MCP tools and optional RAG retrieval.
+
+Boundaries:
+- Receives chat messages over the browser-facing JWT API.
+- Streams replies in the assistant-ui native protocol (Vercel AI SDK data stream).
+- Uses *only* the session's provisioned credentials and scope.
+
+## 3. MCP integration
+
+Owns: making per-message MCP calls with the end user's credentials.
+
+Boundaries:
+- HTTP/SSE only.
+- Stateless per call; credentials are pulled from the in-memory session.
+- 401 from an MCP surfaces as 401 to the browser (triggers JWT refresh path).
+
+## 4. RAG retrieval
+
+Owns: running a retrieval query, scoped to allowed indexes/tables, on either OpenSearch (hybrid BM25 + kNN) or pgvector (vector-only).
+
+Boundaries:
+- Scope applied *before* query construction, not as a post-filter.
+- augchatd does not ingest, chunk, or embed; the backend must already be populated.
+
+## 5. Storage (hot + cold)
+
+Owns: keeping conversation state hot in embedded SQLite while a session is live, flushing to the integrator's S3 bucket on disconnect or 5-minute idle, hydrating from S3 on resume.
+
+Boundaries:
+- One SQLite database per `(mTLS tenant, user)`, laid out as `data/<tenantId>/<userId>.sqlite`.
+- Hot data is not dropped until cold has it (flush retried indefinitely on failure).
+- Setup fails fast if S3 cannot be written at session creation.
+
+## What is *not* a bounded context here
+
+- **Auth** — owned by the integrator.
+- **Policy** — owned by the integrator.
+- **Document ingestion** — owned by the integrator's RAG pipeline.
+- **LLM billing** — owned by the LLM provider.
