@@ -135,7 +135,7 @@ augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "m
 **Two calls do everything:**
 
 1. **Your backend → augchatd** (mTLS): "Create a session for `user_42` with this LLM and key, this S3 bucket for cold storage, this system prompt, and — if the user is allowed — these MCP servers and this RAG backend." augchatd returns a short-lived JWT.
-2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM, MCP servers, and RAG cluster server-side. The UI (assistant-ui, bundled with augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
+2. **Embedded UI → augchatd** (JWT): chat. augchatd loops between the LLM and the conversation's active connectors (MCP, RAG, …) server-side. The UI (assistant-ui, bundled with augchatd, embedded in your app via iframe) only sees the streamed reply and sanitized tool indicators.
 
 ### Token & credential refresh
 

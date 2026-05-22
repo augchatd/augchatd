@@ -24,7 +24,7 @@ Top-level capabilities augchatd offers. Each links to its requirement(s) and beh
 
 ## Capabilities augchatd does not offer
 
-See [intent/non-goals.md](../intent/non-goals.md). Capability-shaped omissions worth naming:
+See [constraints/out-of-scope.md](../constraints/out-of-scope.md). Capability-shaped omissions worth naming:
 
 - No "manage users" capability.
 - No "enforce policy" capability beyond honoring what setup declared.
