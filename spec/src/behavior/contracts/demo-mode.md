@@ -20,10 +20,10 @@ links:
 When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 
 1. **Skips mTLS** entirely.
-2. **Does not accept `POST /sessions`** (the endpoint is not exposed — see [Failure modes](#failure-modes) below). The demo session is bound **at process boot from environment variables**, not minted per request.
+2. **Does not accept `POST /sessions` or `DELETE /sessions/:id`** — both return `404`. The demo session is bound **at process boot from environment variables**, not minted per request, and demo has no integrator authority to forcibly delete (no mTLS). The integrator-facing surface is closed in demo mode.
 3. Loads a **single fixed session** from environment variables:
    - `DEMO_MODEL_PROVIDER`, `DEMO_MODEL_ID`, `DEMO_MODEL_API_KEY`, `DEMO_SYSTEM_PROMPT` — required for the model.
-   - `DEMO_CONNECTORS` (a JSON string) **or** `DEMO_CONNECTORS_FILE` (a filesystem path to a JSON file with the same shape) — optional. Same shape as the production session payload's `connectors[]`. Absent ⇒ no connectors (plain chat). The file variant is recommended whenever the JSON carries credentials (env vars leak to shell history, process listings, and committed compose files).
+   - `DEMO_CONNECTORS` (a JSON string) **or** `DEMO_CONNECTORS_FILE` (a filesystem path to a JSON file with the same shape) — optional. Same shape as the production session payload's `connectors[]`. Absent ⇒ no connectors (plain chat). The file variant is recommended whenever the JSON carries credentials (env vars leak to shell history, process listings, and committed compose files). **The file is read exactly once at boot** and held in memory; subsequent file-system changes do not affect the running process.
    - `DEMO_S3_URI` — optional, the cold-storage bucket (same format as the production `storage.s3` field). Absent ⇒ hot storage only; conversations live for the lifetime of the process and are lost on restart. Acceptable for local demos.
 4. Serves a **`GET /demo/jwt`** endpoint (no auth) that returns a JWT for that fixed session.
 5. Serves the bundled UI on the same port; the UI fetches the JWT from `GET /demo/jwt` instead of receiving it via `postMessage` from an integrator.
@@ -39,15 +39,6 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 - The bundled UI displays a visible **"Demo session — not authenticated"** banner on every page. The banner is rendered from inside the augchatd origin (iframe content); an integrator's parent page cannot style or hide it, by browser same-origin policy.
 - The chat works without any mTLS client cert.
 - The browser API (`GET /conversations`, `POST /chat`, `GET /conversations/:cid/connectors`, `PUT /conversations/:cid/connectors/:descriptive_id`, etc.) works exactly as in production once the demo JWT is held.
-
-## Failure modes
-
-In demo mode, the following endpoints are **absent** (404):
-
-- `POST /sessions` — session minting is bypassed; demo's fixed session is the only one.
-- `DELETE /sessions/:id` — forced logout has no integrator authority in demo (no mTLS).
-
-Calls to either return `404 Not Found`. The integrator-facing surface is closed in demo mode.
 
 ## Non-promises
 

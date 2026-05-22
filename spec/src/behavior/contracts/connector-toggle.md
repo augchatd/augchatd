@@ -8,8 +8,6 @@ evidence:
     section: "README header (connectors paragraph)"
 links:
   - relation: depends_on
-    target: contract-session-create
-  - relation: depends_on
     target: technical-contract-http-get-conversation-connectors
   - relation: depends_on
     target: technical-contract-http-put-conversation-connector-state
@@ -47,12 +45,9 @@ The end user can only **narrow** the resolved scope by turning connectors off **
 - `GET /conversations/:cid/connectors` returns the per-conversation active list with `active` flags.
 - A `POST /conversations` snapshots `default_active` into saved state for every connector then in scope; the immediate `GET /conversations/:cid/connectors` returns those values.
 - `PUT /conversations/:cid/connectors/:descriptive_id { active: false }` flips the connector off **for that conversation**; the next `POST /chat` against that conversation does not expose its tools.
-- Concurrent `PUT`s against the same `(cid, descriptive_id)` follow **last-write-wins**; augchatd does not coordinate them. The bundled UI re-reads via `GET` if it needs to observe the committed value.
 - A `PUT` with an extra field beyond `{ active }`, or a wrong-typed `active`, returns `400`; no state changes.
-- A simultaneous chat against a different conversation `:other_cid` is unaffected — its saved active states are independent.
 - After a forced re-mint (`DELETE /sessions/:id` then `POST /sessions`) the next session re-loads the same `:cid` and serves it with its previously-saved active states.
 - `PUT /conversations/:unknown_cid/...` or `PUT /conversations/:cid/connectors/:unknown_id` returns `404`; no state is changed.
-- A `PUT` whose target conversation is concurrently deleted resolves atomically: a `204` means the value was committed to a still-live conversation; a `404` means nothing was committed (and the conversation is gone, along with its saved active state).
 - `DELETE /conversations/:cid` removes the conversation's saved active states along with the rest of its data.
 
 ## Non-promises

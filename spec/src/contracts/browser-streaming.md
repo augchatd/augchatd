@@ -33,7 +33,7 @@ The browser API supports:
 - toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
 
 > [!NOTE] Assumption
-> The README does not enumerate exact paths/verbs for the conversation endpoints (`GET /conversations`, `POST /conversations`, etc.). They are an evidence gap until code lands. Likely RESTful (`POST /conversations`, `GET /conversations`, `GET /conversations/:id`, `DELETE /conversations/:id`, `POST /chat` or `POST /conversations/:id/messages`) but unconfirmed. The connector endpoints **are** specified — see the two technical-contract files linked above.
+> The conversation endpoints' exact paths/verbs are an evidence gap until code lands. `POST /conversations` and `DELETE /conversations/:cid` are referenced as established semantics by `contract-connector-toggle` and `adr-0010` (snapshot site, atomic delete) — so those two are effectively settled. The remaining gaps are the listing/history/messages paths (`GET /conversations`, `GET /conversations/:id`, and whether send-message is `POST /chat` vs `POST /conversations/:id/messages`). The connector endpoints **are** specified — see the two technical-contract files linked above.
 
 ## Streaming protocol
 

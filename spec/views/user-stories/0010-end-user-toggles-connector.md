@@ -27,7 +27,7 @@ Given my session was provisioned with three connectors:
  When I open the connector panel in the bundled UI
   And I toggle rag_internal off
  Then the UI sends PUT /conversations/cid_A/connectors/rag_internal { active: false }
-  And the response is 200 with { ..., active: false }
+  And the response is 204 No Content
  When I ask the next question in cid_A
  Then the assistant only retrieves from rag_public (rag_internal is not exposed)
   And my chat history is intact (toggling does not affect storage)
@@ -75,7 +75,7 @@ Given my session has a connector "tool_dangerous" with default_active: false
  When I open cid_A and call GET /conversations/cid_A/connectors
  Then I see tool_dangerous listed with active: false
  When I toggle it on: PUT /conversations/cid_A/connectors/tool_dangerous { active: true }
- Then the response is 200 with active: true
+ Then the response is 204 No Content
   And the next chat turn in cid_A exposes tool_dangerous's tool
   And cid_B's tool_dangerous remains at active: false (independent)
 ```
@@ -99,33 +99,25 @@ Given a chat turn is in progress for cid_A and the LLM has already issued a tool
   And the next chat turn in cid_A observes rag_internal as inactive and does not expose it
 ```
 
-## Scenario — integrator changes `default_active` without affecting existing conversations
+## Scenario — integrator changes scope between sessions
 
 ```
-Given my session was provisioned with mcp_github (default_active: true)
-  And I created cid_A; the conversation snapshotted mcp_github with active: true at creation
-  And I never explicitly toggled mcp_github in cid_A
- When the backend later re-mints the session with mcp_github (default_active: FALSE)
+Given cid_A was created with mcp_github (default_active: true) and rag_internal (default_active: true)
+  And both were snapshotted into cid_A's saved state as active: true at creation
+  And I never explicitly toggled either
+ When the backend later re-mints the session with:
+       - mcp_github now default_active: FALSE  (still in scope; default changed)
+       - rag_internal REMOVED from connectors[]
   And I reload cid_A
- Then GET /conversations/cid_A/connectors shows mcp_github: active: true
-  (the snapshot taken at cid_A creation is honored; later changes to default_active do not retroactively shift existing conversations)
+ Then GET /conversations/cid_A/connectors:
+       shows mcp_github: active: true  (snapshot honored; default change does not retroactively shift)
+       omits rag_internal             (out of scope; saved state permanently dropped)
+ When the backend later re-mints again WITH rag_internal
+  And I reload cid_A
+ Then rag_internal reappears at its current default_active  (previously-saved flag is NOT restored)
  When I create a brand-new cid_B
- Then GET /conversations/cid_B/connectors shows mcp_github: active: false
-  (the new default_active is snapshotted for cid_B at its creation)
-```
-
-## Scenario — integrator removed a connector between sessions
-
-```
-Given I previously toggled rag_internal off in cid_A
-  And the backend now re-mints the session WITHOUT rag_internal in the connectors[] payload
- When I reload cid_A
- Then GET /conversations/cid_A/connectors omits rag_internal (not in scope)
-  And the conversation's saved state for rag_internal is dropped
- When the backend later re-mints WITH rag_internal again
-  And I reload cid_A
- Then GET /conversations/cid_A/connectors shows rag_internal at its current default_active
-  (the previously-saved off-flag is NOT restored — out-of-scope means permanently dropped)
+ Then GET /conversations/cid_B/connectors snapshots the CURRENT defaults at creation
+       — mcp_github becomes active: false  for cid_B (the new default)
 ```
 
 ## Scenario — credentials are never returned

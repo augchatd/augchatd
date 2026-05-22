@@ -41,6 +41,14 @@ Each conversation in the file holds, alongside its messages, the **per-conversat
 - A session ending while another for the same user remains alive does **not** remove the file.
 - Process restart preserves the hot DB (it is on disk, not memory-only).
 
+## Canonical row, no per-session cache
+
+A single conversation's per-connector active state (and the messages alongside it) lives in **one** row per `(cid, descriptive_id)` in the user's SQLite file. `PUT /conversations/:cid/connectors/:descriptive_id` writes to that canonical row; idle/disconnect flush reads the canonical row at flush time. Implementations MUST NOT carry a per-session in-memory cache of the active map that flush could write back over a recent `PUT`. This makes multi-device toggles (same user, two device sessions, one toggling while the other is about to flush) behave under the same last-write-wins rule as concurrent toggles on a single device.
+
+## Hot-write failure surface
+
+A hot SQLite write failure during a `PUT /conversations/:cid/connectors/:descriptive_id` or during a first-observation snapshot surfaces to the caller as `503` with `X-Augchatd-Reason: hot-write-failed`. No partial state is committed. This is distinct from the cold-flush stall (`X-Augchatd-Reason: flush-stalled`, see [storage-flush](storage-flush.md)) — they can co-occur on a degraded node but they have different causes and different retry strategies.
+
 ## Non-promises
 
 - augchatd does not expose the SQLite files to integrators; they are internal.

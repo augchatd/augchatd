@@ -6,9 +6,9 @@ evidence:
   - source: README.md
     section: "README header (connectors paragraph) / What augchatd does"
 links:
-  - relation: refines
+  - relation: supports
     target: req-001-per-user-credentials
-  - relation: refines
+  - relation: supports
     target: req-002-rag-scoping
   - relation: supports
     target: contract-session-create
@@ -83,13 +83,20 @@ Active state is persisted **alongside the conversation it belongs to** — in th
 
 **The saved state is captured once, at first observation.** `default_active` is only consulted when a connector first enters a conversation's purview — at `POST /conversations` for connectors in scope at creation, or on the first `GET /conversations/:cid/connectors` / `POST /chat` after a new connector is added to the resolved scope. Once captured, the saved flag is the authoritative value; later changes to `default_active` on the integrator side do **not** retroactively affect existing conversations. Only explicit `PUT /conversations/:cid/connectors/:descriptive_id` calls mutate it after the snapshot.
 
+**Atomicity guarantees.**
+
+- `POST /conversations` MUST commit the conversation row and the initial saved state for every connector then in scope **in a single SQLite transaction**. Partial state (a conversation row without snapshots, or with some snapshots missing) MUST NEVER be observable to readers.
+- First-observation snapshots from `GET /conversations/:cid/connectors` or `POST /chat` MUST be atomic per `(cid, descriptive_id)` (e.g. `INSERT OR IGNORE` semantics in the underlying SQLite). Concurrent first-observation reads thus produce a single committed row; a `PUT` interleaved with two racing snapshots is never silently overwritten.
+- Within a single `POST /chat` request, any first-observation write for a newly-in-scope connector MUST commit before the turn's active-set read; the turn observes what the same request just wrote.
+- A `PUT` and an idle flush targeting the same `(cid, descriptive_id)` row MUST share the same canonical hot SQLite row — flush MUST NOT carry a per-session cache that could overwrite a recent `PUT`. See [contract-storage-hot](../../behavior/contracts/storage-hot.md).
+
 **Reconciliation rules when the resolved scope changes between sessions:**
 
 | Connector situation | Behavior |
 | --- | --- |
 | In current scope AND in saved state | Return the saved flag |
 | In current scope AND not in saved state (new conversation, or connector newly added to scope) | Snapshot the current `default_active` into the saved state at the moment of observation; return that value |
-| In saved state AND no longer in current scope | **Permanently dropped** (saved state cleaned up). If the integrator re-adds the same `descriptive_id` later, it follows the "not in saved state" rule above — the previously-saved flag is **not** restored |
+| In saved state AND no longer in current scope | **Permanently dropped on next observation** (saved state cleaned up the next time the conversation is loaded under a session whose resolved scope omits the `descriptive_id` — augchatd does not eagerly scan every conversation when scope changes). If the integrator re-adds the same `descriptive_id` later, it follows the "not in saved state" rule above — the previously-saved flag is **not** restored |
 
 ### Stability of `descriptive_id`
 
@@ -107,6 +114,4 @@ Active-state persistence keys solely on `descriptive_id`. If the integrator chan
 ## Alternatives considered
 
 - **Keep separate `mcp_servers[]` and `tools.rag`** — works for the previous level of complexity, but doesn't support mid-conversation toggling cleanly, and requires a new key/shape for every future provider type.
-- **Nested `config` object per type** — `{ ..., config: { backend: "opensearch", ... } }`. Slightly tidier type discrimination, but diverges from the established flat convention. Net cost > benefit at current scope.
 - **Allow runtime addition/removal of connectors** — would let the end user *expand* their resolved scope mid-conversation, violating the "integrator resolves, augchatd applies" principle. Rejected; re-mint the session if scope must change.
-- **Treat the LLM as a "connector of type model"** — superficially symmetric, but the LLM is the chat engine itself, not a tool the LLM uses. Different concern; kept separate.

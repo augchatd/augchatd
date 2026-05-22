@@ -25,7 +25,7 @@ Given a valid mTLS client cert and a JSON payload containing at minimum `user_id
 
 1. **Validates** the payload shape.
 2. **Tests S3 writability** against the supplied bucket and credentials. If it cannot write, the request fails with a 4xx and **no session is created**.
-3. **Stores** the credentials and the **connector registry** in process memory keyed by a new `session_id`. Each connector's initial active flag is set from its `default_active`.
+3. **Stores** the credentials and the **connector registry** (the resolved scope; each entry carries `descriptive_id`, `name`, `type`, `default_active`, and type-specific config) in process memory keyed by a new `session_id`. The active flag is **not** held on the session — it lives per conversation (see [contract-connector-toggle](connector-toggle.md), [adr-0010](../../architecture/adrs/0010-unified-connector-model.md)).
 4. **Mints** a JWT (signature-validated, short-lived, minutes).
 5. **Returns** `{ session_id, jwt, expires_at }`.
 

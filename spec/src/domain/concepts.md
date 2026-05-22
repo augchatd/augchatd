@@ -36,7 +36,7 @@ A **tool or retrieval provider** attached to a session. Provisioned as one entry
 
 A connector has:
 
-- **`descriptive_id`** (string, unique within the session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_schooldrive_user_session"`.
+- **`descriptive_id`** (string, unique within the session, **stable across sessions**) — addresses the connector for toggling and logging. Active-state persistence keys on this identifier, so reusing the same `descriptive_id` for a different upstream silently inherits the saved flag — see [adr-0010, "Stability of `descriptive_id`"](../architecture/adrs/0010-unified-connector-model.md#stability-of-descriptive_id). Examples: `"rag_public"`, `"rag_internal"`, `"mcp_schooldrive_user_session"`.
 - **`name`** (string) — display-friendly label shown by the bundled UI.
 - **`type`** (enum) — `"mcp"` (an MCP server) or `"rag"` (a retrieval backend). Extensible.
 - **`default_active`** (boolean) — the connector's active state at session start.

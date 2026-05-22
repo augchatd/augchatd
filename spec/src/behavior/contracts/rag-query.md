@@ -39,7 +39,7 @@ Scope is applied **before** query construction. The LLM cannot express a query t
 - A query captured at the backend lists only the connector's allowed indexes.
 - Two concurrent sessions with disjoint RAG connectors against the same OpenSearch cluster produce disjoint captured queries.
 - An LLM tool call naming a disallowed index produces either a refusal or a query restricted to the active connector's allowed set.
-- A session with two active RAG connectors (e.g. `rag_public` and `rag_internal`) exposes two distinct retrieval tools (or one tool with a connector-selector parameter, implementation detail); each query is scoped to its connector's indexes.
+- A session with two active RAG connectors (e.g. `rag_public` and `rag_internal`) exposes each one to the LLM with its own scope; each query is scoped to that connector's indexes.
 - A RAG-type connector toggled off is absent from the tool list of the next chat turn.
 
 ## Non-promises
