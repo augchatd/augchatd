@@ -18,6 +18,7 @@ import { sign, verify } from "hono/jwt";
  */
 
 const SECRET_BYTES = 32;
+const ALG = "HS256" as const;
 
 const secret: string = (() => {
   const bytes = new Uint8Array(SECRET_BYTES);
@@ -25,14 +26,15 @@ const secret: string = (() => {
   return Buffer.from(bytes).toString("base64url");
 })();
 
-export interface JwtPayload {
+export type JwtPayload = {
+  [key: string]: unknown;
   /** session_id this JWT authorizes against the in-memory registry. */
   sid: string;
   /** Issued-at, unix seconds. */
   iat: number;
   /** Expires-at, unix seconds. */
   exp: number;
-}
+};
 
 export async function mintJwt(
   sessionId: string,
@@ -41,7 +43,7 @@ export async function mintJwt(
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttlSeconds;
   const payload: JwtPayload = { sid: sessionId, iat: now, exp };
-  const jwt = await sign(payload, secret);
+  const jwt = await sign(payload, secret, ALG);
   return { jwt, expires_at: new Date(exp * 1000).toISOString() };
 }
 
@@ -51,8 +53,9 @@ export async function mintJwt(
  */
 export async function verifyJwt(jwt: string): Promise<JwtPayload | null> {
   try {
-    const payload = (await verify(jwt, secret)) as unknown as JwtPayload;
-    return payload;
+    const payload = await verify(jwt, secret, ALG);
+    if (typeof payload.sid !== "string") return null;
+    return payload as JwtPayload;
   } catch {
     return null;
   }

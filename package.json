@@ -7,9 +7,13 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:ui": "cd ui && bun install && bun run build",
+    "dev:ui": "cd ui && bun run dev"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "latest",
+    "ai": "latest",
     "hono": "^4.6.0"
   },
   "devDependencies": {
