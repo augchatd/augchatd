@@ -59,8 +59,8 @@ Given augchatd is running with AUGCHATD_MODE=demo
 ```
 Given I want to try the demo with a knowledge base attached
  When I add -e DEMO_CONNECTORS='[{"descriptive_id":"rag_public","name":"Public docs","type":"rag","default_active":true,"backend":"opensearch","cluster":"https://my-os/","auth":{"bearer":"..."},"indexes":["public"]}]' to my docker run
- Then the bundled UI shows the connector panel with rag_public listed
-  And GET /connectors returns it with active: true
+ Then the bundled UI shows the connector panel with rag_public listed (inside any conversation)
+  And GET /conversations/:cid/connectors for a new conversation returns it with active: true
   And the assistant can retrieve from it
   And I can toggle it off via the UI to test the toggle flow
 ```

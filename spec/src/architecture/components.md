@@ -18,7 +18,6 @@ augchatd process
 │   ├── demo endpoint (mode=demo only): GET /demo/jwt
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
 │   ├── JWT endpoints: chat, conversation CRUD,
-│   │                   GET /connectors (resolved scope),
 │   │                   GET /conversations/:cid/connectors (active per conversation),
 │   │                   PUT /conversations/:cid/connectors/:descriptive_id (toggle)
 │   └── static UI serving (same origin, /)

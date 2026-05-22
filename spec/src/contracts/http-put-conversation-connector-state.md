@@ -78,4 +78,3 @@ Toggling a connector in conversation A does **not** affect conversation B's save
 
 - Behavior: [contract-connector-toggle](../behavior/contracts/connector-toggle.md)
 - Listing: [http-get-conversation-connectors](http-get-conversation-connectors.md)
-- Resolved scope: [http-get-connectors](http-get-connectors.md)

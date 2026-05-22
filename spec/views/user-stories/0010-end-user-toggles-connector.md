@@ -4,7 +4,6 @@ type: user-story
 status: proposed
 derived_from:
   - contract-connector-toggle
-  - technical-contract-http-get-connectors
   - technical-contract-http-get-conversation-connectors
   - technical-contract-http-put-conversation-connector-state
 audience: "End user of the integrator's product"
@@ -100,30 +99,28 @@ Given a chat turn is in progress for cid_A and the LLM has already issued a tool
   And the next chat turn in cid_A observes rag_internal as inactive and does not expose it
 ```
 
-## Scenario — integrator changed scope between sessions (reconciliation)
+## Scenario — integrator removed a connector between sessions
 
 ```
 Given I previously toggled rag_internal off in cid_A
   And the backend now re-mints the session WITHOUT rag_internal in the connectors[] payload
  When I reload cid_A
- Then GET /conversations/cid_A/connectors omits rag_internal (silently dropped, not in scope)
+ Then GET /conversations/cid_A/connectors omits rag_internal (not in scope)
+  And the conversation's saved state for rag_internal is dropped
  When the backend later re-mints WITH rag_internal again
   And I reload cid_A
- Then GET /conversations/cid_A/connectors shows rag_internal: active: false (saved state honored)
+ Then GET /conversations/cid_A/connectors shows rag_internal at its current default_active
+  (the previously-saved off-flag is NOT restored — out-of-scope means permanently dropped)
 ```
 
 ## Scenario — credentials are never returned
 
 ```
-When I GET /connectors  (the session resolved scope)
-Then the response contains, per connector, exactly:
-       descriptive_id, name, type     (no active flag here)
-
 When I GET /conversations/cid_A/connectors
 Then the response contains, per connector, exactly:
        descriptive_id, name, type, active
 
-And neither response contains url, auth, cluster, indexes, bearer, api_key, or any other configuration field.
+And it does NOT contain url, auth, cluster, indexes, bearer, api_key, or any other configuration field.
 ```
 
 ## Why this matters

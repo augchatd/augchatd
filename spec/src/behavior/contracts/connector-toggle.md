@@ -10,8 +10,6 @@ links:
   - relation: depends_on
     target: contract-session-create
   - relation: depends_on
-    target: technical-contract-http-get-connectors
-  - relation: depends_on
     target: technical-contract-http-get-conversation-connectors
   - relation: depends_on
     target: technical-contract-http-put-conversation-connector-state
@@ -29,11 +27,10 @@ links:
 
 For each conversation in a live session, the browser can:
 
-1. **List the session's resolved scope** (provisioned connectors, no active flag) via `GET /connectors`.
-2. **List a conversation's connectors with active state** via `GET /conversations/:conversation_id/connectors`.
-3. **Toggle** an individual connector's active state **for that conversation** via `PUT /conversations/:conversation_id/connectors/:descriptive_id { active: bool }`.
+1. **List a conversation's connectors with their active state** via `GET /conversations/:conversation_id/connectors`.
+2. **Toggle** an individual connector's active state **for that conversation** via `PUT /conversations/:conversation_id/connectors/:descriptive_id { active: bool }`.
 
-All three responses are free of credentials, URLs, and auth.
+Both responses are free of credentials, URLs, and auth.
 
 Active state is **persisted as part of the conversation**:
 
@@ -52,11 +49,10 @@ When a conversation is loaded into a session whose resolved scope has changed si
 
 - **In saved state AND in current scope** → restored to the saved active flag.
 - **In current scope AND not in saved state** (new connector since last session) → starts at the connector's current `default_active`.
-- **In saved state AND no longer in current scope** (connector removed by the integrator) → silently dropped at restore time. If the integrator later re-adds the same `descriptive_id`, the previously-saved active flag returns.
+- **In saved state AND no longer in current scope** (connector removed by the integrator) → **permanently dropped**. If the integrator later re-adds the same `descriptive_id`, it starts fresh at `default_active` (the previously-saved flag is **not** restored).
 
 ## Observable outcomes
 
-- `GET /connectors` returns the resolved scope (descriptive_id, name, type) with **no** `active` field.
 - `GET /conversations/:cid/connectors` returns the per-conversation active list with `active` flags.
 - A new conversation created via `POST /conversations` immediately answers `GET /conversations/:cid/connectors` with `active = default_active` for every connector in the resolved scope.
 - `PUT /conversations/:cid/connectors/:descriptive_id { active: false }` flips the connector off **for that conversation**; the next `POST /chat` against that conversation does not expose its tools.
@@ -72,15 +68,15 @@ When a conversation is loaded into a session whose resolved scope has changed si
 - The end user cannot **add** a connector via toggling. The session's connector list is fixed at session creation; only the per-conversation active flag changes.
 - augchatd does not synchronize active state across conversations of the same user. Each conversation is independent.
 - augchatd does not expose a "user default active set" separate from per-conversation state. New conversations always start at `default_active`; if the integrator wants different defaults per user, they pass different `default_active` per session.
+- augchatd does not preserve saved active flags for connectors removed from the resolved scope. Removing a connector and re-adding it later resets that connector to `default_active` in every conversation that previously held a saved flag for it.
 
 ## Tests this contract implies
 
-- `GET /connectors` returns entries with `{descriptive_id, name, type}` only; no `active` field present.
 - `GET /conversations/:cid/connectors` for a newly-created conversation returns each connector with `active = default_active`.
 - `PUT /conversations/:cid/connectors/X { active: false }` then `POST /chat` against `:cid`: X's tool is not invoked.
 - `PUT /conversations/:cidA/connectors/X { active: false }` then `POST /chat` against `:cidB` (different conversation): X's tool IS invoked for `:cidB`.
 - Save state on `:cid` with `rag_internal = false`; force re-mint; reload `:cid`; `GET /conversations/:cid/connectors` still shows `rag_internal: false`.
-- Save state on `:cid` with `rag_internal = false`; integrator re-mints without `rag_internal`; `GET /conversations/:cid/connectors` omits `rag_internal`. Integrator re-mints again WITH `rag_internal`; reloading `:cid` shows `rag_internal: false` (saved state honored).
+- Save state on `:cid` with `rag_internal = false`; integrator re-mints without `rag_internal`; `GET /conversations/:cid/connectors` omits `rag_internal`. Integrator re-mints again WITH `rag_internal`; reloading `:cid` shows `rag_internal: default_active` — the previously-saved off-flag is **not** restored.
 - `PUT /conversations/:cid/connectors/:unknown_id` → 404.
 - `PUT /conversations/:unknown_cid/connectors/:descriptive_id` → 404.
 - Listing response contains no field whose name appears in the session payload's connector secrets (e.g. `auth`, `api_key`, `cluster`).

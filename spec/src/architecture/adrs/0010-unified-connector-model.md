@@ -63,7 +63,7 @@ Each connector entry has these common fields:
 Each connector carries an *active* boolean **per conversation** (not per session):
 
 - It **starts** at `default_active` when a brand-new conversation is created.
-- The browser can **read** the active set for a conversation via `GET /conversations/:cid/connectors` and **toggle** an entry via `PUT /conversations/:cid/connectors/:descriptive_id { active }` — both JWT-authenticated. The session-wide `GET /connectors` returns the resolved scope only (no active flag). See [http-get-connectors](../../contracts/http-get-connectors.md), [http-get-conversation-connectors](../../contracts/http-get-conversation-connectors.md), [http-put-conversation-connector-state](../../contracts/http-put-conversation-connector-state.md).
+- The browser can **read** the active set for a conversation via `GET /conversations/:cid/connectors` and **toggle** an entry via `PUT /conversations/:cid/connectors/:descriptive_id { active }` — both JWT-authenticated. See [http-get-conversation-connectors](../../contracts/http-get-conversation-connectors.md), [http-put-conversation-connector-state](../../contracts/http-put-conversation-connector-state.md).
 - When the LLM is invoked for a chat turn against a conversation, **only that conversation's active connectors' tools are exposed**.
 - The active set is captured at the start of each chat turn — toggling mid-turn does not abort an in-flight tool call.
 
@@ -87,12 +87,12 @@ Active state is persisted **alongside the conversation it belongs to** — in th
 | --- | --- |
 | In saved state AND in current scope | Restored to the saved flag |
 | In current scope AND not in saved state | Starts at the connector's current `default_active` |
-| In saved state AND no longer in current scope | Silently dropped from the response. If the integrator re-adds the same `descriptive_id` later, the saved flag returns |
+| In saved state AND no longer in current scope | **Permanently dropped.** If the integrator re-adds the same `descriptive_id` later, it starts fresh at `default_active` — the previously-saved flag is **not** restored |
 
 ## Consequences
 
 - One server-side dispatcher with a `type` switch; new connector types extend the enum without reshaping the payload.
-- The bundled UI gains a connector panel: each entry shows `name`, `type`, and a toggle bound to the active state. Credentials are never sent to the browser. There are two listing endpoints with different shapes: `GET /connectors` returns the session resolved scope `[{descriptive_id, name, type}]` (no `active` field); `GET /conversations/:cid/connectors` returns `[{descriptive_id, name, type, active}]` with the conversation's per-connector active state.
+- The bundled UI gains a connector panel inside each conversation: each entry shows `name`, `type`, and a toggle bound to the active state. Credentials are never sent to the browser. The listing endpoint `GET /conversations/:cid/connectors` returns `[{descriptive_id, name, type, active}]` — the resolved scope intersected with the conversation's saved active flags.
 - The `model` (LLM) is **not** a connector — it is the chat engine itself, configured once per session.
 - Existing language in the spec moves from "MCP server" / "RAG backend" to "connector of type X" where the unified vocabulary helps; the lower-level contracts (`mcp-invocation`, `rag-query`) continue to describe the per-type mechanics.
 

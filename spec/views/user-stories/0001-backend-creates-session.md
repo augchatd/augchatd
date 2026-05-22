@@ -66,11 +66,11 @@ Given we want a chat with no tools and no retrieval
 ## Scenario — connector with default_active: false
 
 ```
-Given we want to provision a powerful tool that the user must opt in to per session
+Given we want to provision a powerful tool that the user must opt in to per conversation
  When our backend posts with a connector entry whose default_active is false
  Then we receive a working session
-  And the connector is present in GET /connectors with active: false
-  And it is NOT exposed to the LLM until the end user toggles it on
+  And the connector is present in GET /conversations/:cid/connectors (for any new conversation) with active: false
+  And it is NOT exposed to the LLM until the end user toggles it on for that conversation
 ```
 
 ## Scenario — production TTL
