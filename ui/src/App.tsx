@@ -17,19 +17,19 @@ interface HealthState {
 }
 
 /**
- * augchatd bundled UI — first cut.
+ * augchatd bundled UI.
  *
  * Per story 0007 / contract-demo-mode:
- *  - Boots, calls /healthz to learn the mode
- *  - In demo mode, fetches the JWT from /demo/jwt
- *  - Shows a "Demo session — not authenticated" banner from inside the
- *    augchatd origin (parent page cannot style or hide this)
- *  - Hands the JWT to the chat runtime; POST /chat requests carry it as
- *    a Bearer token; on 401 the JWT is re-fetched once (per
- *    contract-jwt-refresh, single recovery path)
+ *  - Boots, calls /healthz to learn the mode.
+ *  - In demo mode, fetches the JWT from /demo/jwt.
+ *  - Shows a "Demo session — not authenticated" banner from inside
+ *    the augchatd origin (parent page cannot style or hide it).
+ *  - Hands the JWT to the chat runtime; POST /chat carries it as a
+ *    Bearer token; on 401 the JWT is re-fetched once (per
+ *    contract-jwt-refresh, single recovery path).
  *
- * Production handshake (postMessage from the integrator parent page, per
- * contract-ui-handshake) is not wired yet — that comes when prod
+ * Production handshake (postMessage from the integrator's parent page,
+ * per contract-ui-handshake) is not wired yet — that comes when prod
  * POST /sessions lands.
  */
 export default function App() {
@@ -66,23 +66,25 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="app">
-        <div className="error">augchatd: {error}</div>
+      <div className="flex h-full items-center justify-center p-6 text-warn-fg">
+        augchatd: {error}
       </div>
     );
   }
   if (!health || !jwt) {
     return (
-      <div className="app">
-        <div className="loading">Loading…</div>
+      <div className="flex h-full items-center justify-center p-6 text-fg-muted">
+        Loading…
       </div>
     );
   }
 
   return (
-    <div className="app">
+    <div className="flex h-full flex-col">
       {health.mode === "demo" && (
-        <div className="banner">Demo session — not authenticated</div>
+        <div className="border-b border-warn-border bg-warn-bg px-4 py-2 text-center text-[13px] font-medium tracking-wide text-warn-fg">
+          Demo session — not authenticated
+        </div>
       )}
       <ChatRoom initialJwt={jwt} />
     </div>
@@ -107,10 +109,9 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
         fetch: async (input, init) => {
           const r = await fetch(input, init);
           if (r.status !== 401) return r;
-          // Single retry on 401 — same recovery path JWT and connector
-          // credential expiry share (per contract-jwt-refresh). For
-          // production, the iframe parent page supplies the fresh JWT.
-          // In demo mode we just re-fetch from /demo/jwt.
+          // Per contract-jwt-refresh: single recovery path. In demo
+          // mode the iframe parent (the integrator) is augchatd
+          // itself, so we just re-GET /demo/jwt.
           try {
             jwtRef.current = await fetchDemoJwt();
           } catch {
@@ -128,33 +129,41 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadPrimitive.Root className="thread-shell">
-        <ThreadPrimitive.Viewport className="thread-messages">
-          <ThreadPrimitive.Messages
-            components={{
-              UserMessage,
-              AssistantMessage,
-            }}
-          />
+      <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+        <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-thread flex-col gap-6 px-4 py-8">
+            <ThreadPrimitive.Empty>
+              <EmptyState />
+            </ThreadPrimitive.Empty>
+            <ThreadPrimitive.Messages
+              components={{ UserMessage, AssistantMessage }}
+            />
+          </div>
         </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root className="composer">
-          <ComposerPrimitive.Input
-            placeholder="Send a message…"
-            autoFocus
-            rows={1}
-          />
-          <ComposerPrimitive.Send>Send</ComposerPrimitive.Send>
-        </ComposerPrimitive.Root>
+        <Composer />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
 }
 
+function EmptyState() {
+  return (
+    <div className="rounded-lg border border-border bg-bg-soft p-6 text-fg-muted">
+      <div className="mb-1 text-fg-base">Try a question.</div>
+      <div className="text-[13px]">
+        The session uses the model and key bound at boot from env vars.
+      </div>
+    </div>
+  );
+}
+
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="message user">
-      <div className="message-role">You</div>
-      <div className="message-content">
+    <MessagePrimitive.Root className="flex flex-col items-end gap-1">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+        You
+      </div>
+      <div className="rounded-2xl rounded-tr-md border border-border bg-bg-mid px-4 py-2.5 max-w-[85%] whitespace-pre-wrap">
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>
@@ -163,11 +172,36 @@ function UserMessage() {
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="message assistant">
-      <div className="message-role">Assistant</div>
-      <div className="message-content">
+    <MessagePrimitive.Root className="flex flex-col gap-1">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+        Assistant
+      </div>
+      <div className="rounded-2xl rounded-tl-md border border-border bg-bg-soft px-4 py-3 max-w-[95%]">
         <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function Composer() {
+  return (
+    <div className="border-t border-border bg-bg-base">
+      <ComposerPrimitive.Root className="mx-auto flex w-full max-w-thread items-end gap-2 px-4 py-3">
+        <ComposerPrimitive.Input
+          placeholder="Send a message…"
+          autoFocus
+          rows={1}
+          className="
+            flex-1 resize-none rounded-lg border border-border bg-bg-soft px-3 py-2
+            text-fg-base placeholder:text-fg-muted
+            focus:border-accent focus:outline-none
+            min-h-[40px] max-h-[200px]
+          "
+        />
+        <ComposerPrimitive.Send className="rounded-lg bg-accent px-4 py-2 font-semibold text-bg-base hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+          Send
+        </ComposerPrimitive.Send>
+      </ComposerPrimitive.Root>
+    </div>
   );
 }
