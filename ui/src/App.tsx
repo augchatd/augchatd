@@ -12,7 +12,11 @@ import {
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
 import { MarkdownText } from "./Markdown.tsx";
-import { CitationsPanel } from "./blocks/CitationsPanel.tsx";
+// CitationsPanel temporarily removed — the useThread selector returned a
+// new array each render, triggering React error #185 (max update depth).
+// Reintroduce with the imperative useThreadRuntime + subscribe pattern
+// when RAG-type connectors actually emit source-url / source-document
+// parts. Tracked in augchatd/augchatd#5.
 
 interface HealthState {
   mode: "demo" | "prod";
@@ -145,7 +149,6 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
               components={{ UserMessage, AssistantMessage }}
             />
           </div>
-          <CitationsPanel />
         </ThreadPrimitive.Viewport>
         <Composer />
       </ThreadPrimitive.Root>
