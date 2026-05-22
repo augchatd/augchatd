@@ -15,20 +15,26 @@ links:
 
 ## Statement
 
-When a session has `tools.rag` provisioned, every retrieval request augchatd executes is constrained to the indexes (OpenSearch) or tables (pgvector) declared at session setup. The scope applies *before* the query reaches the backend — not as a post-filter on results.
+When a conversation has one or more **active RAG-type connectors** (active state is per-conversation; see [contract-connector-toggle](../contracts/connector-toggle.md)), every retrieval request augchatd executes is constrained to that connector's declared `indexes[]`. Currently the only supported `backend` is `"opensearch"` (pgvector is a future option — see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)). The scope applies *before* the query reaches the backend — not as a post-filter on results.
 
-The LLM is given a tool whose surface only exposes the allowed scope; it cannot construct a query that escapes it.
+The LLM is given a tool surface that only exposes the indexes from active connectors; it cannot construct a query that escapes them. **Inactive** RAG-type connectors are not exposed to the LLM at all.
+
+The integrator's application is the sole authority on which connectors a session gets (the *resolved scope*); augchatd enforces that scope on every retrieval call without re-deciding it.
 
 ## Why
 
-A scope-as-post-filter design is one MCP-driven typo or prompt-injected query away from leaking another tenant's documents. Pre-query scoping makes the bad query unrepresentable.
+A scope-as-post-filter design is one MCP-driven typo or prompt-injected query away from leaking another tenant's documents. Pre-query scoping makes the bad query unrepresentable. Moving scoping to a per-connector field (rather than a single session-wide one) lets the end user further narrow the scope mid-conversation by toggling specific connectors off — without rebuilding session state.
 
 ## How it is observed
 
-- A session that allows `["engineering-docs", "private-42"]` can search those indexes and no others.
-- A second session that allows `["sales-docs"]` running concurrently against the same OpenSearch cluster can search `sales-docs` and no others.
-- An LLM attempt to express "search everything" reaches the backend only as a query against the allowed scope.
+- A session whose `rag_engineering` connector allows `["engineering-docs", "private-42"]` can search those indexes via that connector and no others.
+- A second session whose `rag_sales` connector allows `["sales-docs"]` running concurrently against the same OpenSearch cluster searches `sales-docs` and no others.
+- An LLM attempt to express "search everything" reaches the backend only as queries against the active connectors' allowed indexes.
+- A connector toggled off for a conversation via `PUT /conversations/:cid/connectors/:descriptive_id` is not exposed to the LLM on the next turn of that conversation, so no query references its indexes — while the same connector remains exposed for other conversations where it is active.
 
 ## Acceptance
 
-Implementation must show a captured query (server log or trace) for each test session that contains only the allowed indexes/tables. Negative test: an LLM tool call that mentions a disallowed index returns either a refusal or a query restricted to the allowed set — never a query that includes the disallowed name.
+Implementation must show a captured query (server log or trace) for each test (session, conversation) pair that contains only the conversation's active connector's allowed indexes. Negative tests:
+
+- LLM tool call mentioning an index not in any active connector's `indexes[]` → query refused or restricted to the active set; the disallowed index name never appears in the outbound query.
+- Connector toggled off then chat → no query for that connector observed.

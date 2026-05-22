@@ -18,16 +18,22 @@ JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md) (
 
 ## Surface (declared minimum)
 
-The README states the browser API supports:
+The browser API supports:
 
+**Conversations:**
 - list conversations
 - create conversation
+- get a conversation's history
 - delete conversation
-- send a message
+- send a message (chat)
 - receive streamed reply
 
+**Connectors** (see [contract-connector-toggle](../behavior/contracts/connector-toggle.md)):
+- list a conversation's connectors with active state — [GET /conversations/:cid/connectors](http-get-conversation-connectors.md)
+- toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
+
 > [!NOTE] Assumption
-> The README does not enumerate exact paths/verbs. They are an evidence gap until code lands. Likely RESTful (`GET /conversations`, `POST /conversations`, `DELETE /conversations/:id`, `POST /conversations/:id/messages` or similar) but unconfirmed.
+> The conversation endpoints' exact paths/verbs are an evidence gap until code lands. `POST /conversations` and `DELETE /conversations/:cid` are referenced as established semantics by `contract-connector-toggle` and `adr-0010` (snapshot site, atomic delete) — so those two are effectively settled. The remaining gaps are the listing/history/messages paths (`GET /conversations`, `GET /conversations/:id`, and whether send-message is `POST /chat` vs `POST /conversations/:id/messages`). The connector endpoints **are** specified — see the two technical-contract files linked above.
 
 ## Streaming protocol
 
@@ -45,11 +51,10 @@ That stream carries:
 Per [req-003](../behavior/requirements/req-003-server-side-secrets.md):
 
 - LLM API key
-- MCP credentials or URLs
-- RAG cluster URL or credentials
+- Connector credentials (MCP auth, RAG backend auth) or upstream URLs (MCP URL, RAG cluster)
 - S3 credentials
 
-Tool indicators are sanitized at the augchatd boundary.
+Tool indicators are sanitized at the augchatd boundary; they carry connector `descriptive_id` / `name` but never `auth`, `url`, `cluster`, or `indexes`.
 
 ## Related
 

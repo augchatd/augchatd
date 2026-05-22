@@ -24,11 +24,25 @@ Given an authenticated end user "user_42" in our app
        { user_id: "user_42",
          system_prompt: "You are a helpful assistant.",
          model:   { provider: "anthropic", model_id: "...", api_key: "..." },
-         mcp_servers: [{ url: "https://github-mcp/", auth: { bearer: "<user_42-token>" } }],
-         tools:   { rag: { backend: "opensearch", cluster: "...", indexes: ["docs"] } },
+         connectors: [
+           { descriptive_id: "mcp_github",
+             name:           "GitHub (user OAuth)",
+             type:           "mcp",
+             default_active: true,
+             url:            "https://github-mcp/",
+             auth:           { bearer: "<user_42-token>" } },
+           { descriptive_id: "rag_engineering",
+             name:           "Engineering documentation",
+             type:           "rag",
+             default_active: true,
+             backend:        "opensearch",
+             cluster:        "https://our-opensearch/",
+             auth:           { bearer: "<rag-token>" },
+             indexes:        ["engineering-docs"] }
+         ],
          storage: { s3: "s3://.../bucket/" } }
  Then we receive { session_id, jwt, expires_at }
-  And nothing else has happened on user_42's behalf yet (no LLM call, no MCP call)
+  And nothing else has happened on user_42's behalf yet (no LLM call, no connector call)
 ```
 
 ## Scenario — S3 is not writable
@@ -43,10 +57,20 @@ Given the bucket credentials are wrong
 ## Scenario — only the minimum
 
 ```
-Given we want a chat with no tools and no RAG
- When our backend posts with just { user_id, system_prompt, model, storage.s3 }
+Given we want a chat with no tools and no retrieval
+ When our backend posts with just { user_id, system_prompt, model, storage.s3 } (no connectors[])
  Then we receive a working session
-  And no MCP servers or RAG indexes are exposed to that session
+  And no tools or retrieval are exposed to that session at chat time
+```
+
+## Scenario — connector with default_active: false
+
+```
+Given we want to provision a powerful tool that the user must opt in to per conversation
+ When our backend posts with a connector entry whose default_active is false
+ Then we receive a working session
+  And the connector is present in GET /conversations/:cid/connectors (for any new conversation) with active: false
+  And it is NOT exposed to the LLM until the end user toggles it on for that conversation
 ```
 
 ## Scenario — production TTL

@@ -17,16 +17,16 @@ audience: "Integrator backend engineer"
 ## Scenario
 
 ```
-Given user_42's GitHub OAuth token has expired since session creation
- When the assistant tries to call the GitHub MCP during a chat turn
- Then the MCP returns 401 to augchatd
+Given user_42's GitHub OAuth token (held in the mcp_github connector's auth) has expired since session creation
+ When the assistant tries to call the mcp_github connector during a chat turn
+ Then the upstream MCP returns 401 to augchatd
   And augchatd returns 401 to the iframe (the same status as a JWT-expiry)
   And the iframe runs the same recovery as in story 0004:
         ask integrator page → integrator backend re-mints the session
-        with a freshly-refreshed GitHub token from our vault
+        with a connectors[] entry whose mcp_github auth carries a freshly-refreshed token from our vault
   And the conversation resumes with the new credential
 ```
 
 ## Why this matters
 
-augchatd holds no refresh logic of its own. The integrator's vault is the only source of truth for the end user's external credentials. One code path on the integrator side covers both kinds of expiry.
+augchatd holds no refresh logic of its own. The integrator's vault is the only source of truth for the end user's external credentials. One code path on the integrator side covers both kinds of expiry (JWT expiry and connector-credential expiry); both are resolved by re-minting the session.

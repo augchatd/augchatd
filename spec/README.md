@@ -57,6 +57,20 @@ links:                       # graph edges to other spec files
 - `current` — backed by code + tests; reflects what the system does today
 - `deprecated` — kept for history or migration; no longer true
 
+## Canonicity convention (one source, many links)
+
+Each normative rule lives in **one canonical file**. Other files that need to mention the rule **link to it** (via section anchor when possible) rather than restating it. Restated rules drift over time; linked rules don't.
+
+Examples of canonical rules in this spec:
+
+- **Connector reconciliation table** → [`adr-0010` §Persistence of active state](src/architecture/adrs/0010-unified-connector-model.md#persistence-of-active-state-per-conversation). Other files (`connector-toggle`, `http-get-conversation-connectors`, story 0010) describe their slice and link here for the full table.
+- **15-min stalled-flush threshold / read-only mode** → [`storage-durability` §Retry policy](src/constraints/storage-durability.md#retry-policy). `storage-flush`, `session-chat`, and `bounded-contexts §4` link instead of restating.
+- **Scope rule (integrator resolves, end user only narrows)** → [`adr-0010` §Active state and the scope rule](src/architecture/adrs/0010-unified-connector-model.md#active-state-and-the-scope-rule). Contracts and stories reference it.
+- **What augchatd refuses to do** → [`constraints/out-of-scope.md`](src/constraints/out-of-scope.md). Single canonical list, categorized; capabilities.md links.
+- **`descriptive_id` stability** → [`adr-0010` §Stability of descriptive_id](src/architecture/adrs/0010-unified-connector-model.md#stability-of-descriptive_id). Concepts, glossary, and http-post-sessions reference it.
+
+If you find yourself restating a rule, stop and link instead. If two files genuinely need to say different things about the same concept, the rule probably needs to be **split** into two (each canonical to one file), not duplicated.
+
 ## Divergence flag convention
 
 When the spec, code, or a view disagree, do **not** reconcile silently.

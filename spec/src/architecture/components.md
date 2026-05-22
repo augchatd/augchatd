@@ -17,20 +17,26 @@ augchatd process
 │   ├── mTLS endpoints: POST /sessions, DELETE /sessions/:id
 │   ├── demo endpoint (mode=demo only): GET /demo/jwt
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
-│   ├── JWT endpoints: chat, conversation CRUD (browser API)
+│   ├── JWT endpoints: chat, conversation CRUD,
+│   │                   GET /conversations/:cid/connectors (active per conversation),
+│   │                   PUT /conversations/:cid/connectors/:descriptive_id (toggle)
 │   └── static UI serving (same origin, /)
 │
 ├── Session registry (in-memory)
-│   └── { session_id → { user_id, model+key, mcp[], rag?, storage } }
+│   └── { session_id → { user_id, model+key, connectors[] (resolved scope), storage, ttl } }
+│        each connector: { descriptive_id, name, type, default_active, type-specific config }
+│        — active flag lives per conversation in hot SQLite, not here
 │
 ├── Tool-use loop
 │   ├── LLM driver (Vercel AI SDK; Anthropic, OpenAI, …)
-│   ├── MCP client (HTTP/SSE, per-session credentials)
-│   └── RAG client (OpenSearch hybrid | pgvector vector)
+│   └── Connector dispatcher (type-routed; only the conversation's active connectors exposed per turn)
+│        ├── MCP client (HTTP/SSE, per-connector credentials)
+│        └── RAG client (OpenSearch hybrid; pgvector is future)
 │
 ├── Hot storage
 │   └── Bun embedded SQLite, one DB per (mTLS tenant, user)
 │        layout: data/<tenantId>/<userId>.sqlite
+│        each conversation holds messages + per-connector active state
 │
 ├── Cold storage driver
 │   └── S3-compatible client (per-session bucket + creds)
@@ -42,8 +48,9 @@ augchatd process
 ## External dependencies
 
 - LLM provider (per-session API key)
-- MCP servers (per-session URL + auth; HTTP/SSE)
-- RAG backend (OpenSearch or pgvector; per-session credentials and scope)
+- Per-connector upstreams:
+  - **MCP-type** connectors → MCP servers (URL + auth; HTTP/SSE)
+  - **RAG-type** connectors → retrieval backend (currently OpenSearch only; pgvector is future) with per-connector credentials and `indexes[]` scope
 - S3-compatible bucket (per-session credentials)
 
 augchatd has **no required external dependencies** to start: no separate database, no separate cache, no separate frontend host. Required externals are per-session and supplied at session creation.
@@ -69,3 +76,4 @@ See ADRs:
 - [0007 — Bun + Hono + TypeScript stack](adrs/0007-bun-hono-typescript.md)
 - [0008 — Demo mode shares the production binary](adrs/0008-demo-mode-shares-binary.md)
 - [0009 — React + Vite bundled UI](adrs/0009-react-vite-bundled-ui.md)
+- [0010 — Unified connector model](adrs/0010-unified-connector-model.md)

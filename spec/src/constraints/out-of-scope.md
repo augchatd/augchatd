@@ -9,42 +9,49 @@ evidence:
 
 # Constraint — Out of scope
 
-This is the consolidated list of what augchatd refuses to do, by category. See [intent/non-goals.md](../intent/non-goals.md) for the same list framed as intent.
+**Canonical list of what augchatd refuses to do.** Each non-goal is a deliberate boundary that keeps the daemon small and keeps the integrator's existing systems authoritative — the integrator owns the responsibility, augchatd doesn't grow to cover it.
+
+(This file replaces an earlier `intent/non-goals.md`; both used to carry the same list with different framings, which created drift risk. Now there is one canonical source — this file — categorized below, with each item's alternative location inline.)
 
 ## Identity & policy
 
-- Manage users.
-- Enforce permissions about which user can use which MCP / which RAG indexes (integrator passes the result of that decision at setup).
+- **Manage users.** Lives in the integrator's existing app.
+- **Decide** which user can use which connector / index / tool. The integrating application resolves policy at session setup; augchatd applies the resolved scope on every message. **Enforcement of an already-resolved scope is in scope; deciding the scope is not.**
 
 ## MCP
 
-- Host MCP servers.
-- Talk to MCPs over stdio.
+- **Host MCP servers.** augchatd is a *client* to MCP servers the integrator or third parties operate.
+- **Talk to MCPs over stdio.** HTTP/SSE only; wrap stdio MCPs with a bridge such as `mcpo`. See [adr-0004](../architecture/adrs/0004-http-sse-mcp-only.md).
 
 ## RAG
 
-- Ingest, chunk, or embed documents.
+- **Ingest, chunk, or embed documents.** External pipeline; integrator's choice. README suggests DigitalOcean Gradient AI for OpenSearch.
+- **Support `backend: "pgvector"`** — currently only `"opensearch"` is accepted. pgvector is a future option; see [pressure-pgvector-backend](../pressure/pgvector-backend.md).
+
+## Connectors
+
+- **Allow the end user to add a connector mid-conversation.** The connector list is fixed at session creation; end-user toggles can only narrow it. Re-mint the session to change scope.
 
 ## Storage & data
 
-- Store credentials at rest beyond an active session's lifetime.
-- Client-side-encrypt conversation history before writing to cold storage.
+- **Store credentials at rest** beyond an active session's lifetime. Credentials live in process memory for the session's lifetime only.
+- **Client-side-encrypt conversation history** before writing to cold storage. Configure SSE-S3, SSE-KMS, or equivalent on the customer bucket.
 
 ## Agent surface
 
-- Long-term memory.
-- Planning / autonomous-agent loops.
+- **Long-term memory.** Out of scope; augchatd is a tool-use loop, not an agent framework.
+- **Planning / autonomous-agent loops.** Same.
 
 ## Commercial / operational
 
-- Bill or meter LLM usage.
-- Enforce per-tenant rate limits.
-- Ship observability dashboards or metrics.
+- **Bill or meter LLM usage.** The customer's LLM key is billed directly by the provider.
+- **Enforce per-tenant rate limits.** Throttle at the edge before minting the session.
+- **Ship observability dashboards or metrics.** Logs go to stderr; wire your own collector. See [observability](observability.md).
 
 ## Safety / privacy
 
-- Content moderation.
-- PII redaction.
+- **Content moderation.** Run at the integrator's edge or as an MCP-type connector.
+- **PII redaction.** Same.
 
 ## Rule
 

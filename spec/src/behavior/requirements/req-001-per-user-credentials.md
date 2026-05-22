@@ -18,10 +18,12 @@ links:
 Each session carries its own end-user-specific credentials, supplied by the integrator at `POST /sessions`:
 
 - the LLM key (may be the integrator's shared key or the end user's enterprise key)
-- the MCP servers' auth (typically the end user's own OAuth tokens)
+- the **per-connector credentials** for each entry in `connectors[]` (typically the end user's own OAuth tokens for MCP-type connectors; backend credentials for RAG-type connectors)
 - the cold-storage S3 bucket + credentials
 
-augchatd routes every LLM call, MCP call, and storage operation for that session through *only* those credentials — never another session's.
+augchatd routes every LLM call, connector call (MCP, RAG, future types), and storage operation for that session through *only* those credentials — never another session's, and never the credentials of an inactive connector.
+
+The integrator's application **resolves** which credentials a session uses; augchatd does not decide.
 
 ## Why
 

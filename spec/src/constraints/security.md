@@ -17,7 +17,7 @@ Cross-cutting rules that hold across every capability.
 ## Secrets
 
 - **Browser holds**: JWT (short-lived, minutes). Nothing else.
-- **Process memory holds** (for the session's lifetime): LLM key, MCP credentials, RAG cluster URL + credentials, S3 credentials.
+- **Process memory holds** (for the session's lifetime): LLM key, per-connector credentials (MCP auth, RAG backend auth) and upstream URLs (MCP URL, RAG cluster), S3 credentials.
 - **No persistent credential storage**. Credentials are dropped when the session ends.
 - **No plaintext credentials in logs.** Logs go to stderr; the operator wires their own collector.
 

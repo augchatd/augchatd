@@ -20,8 +20,7 @@ links:
 The following secrets must never appear in any payload sent to the browser, in any bundle served to the browser, or in any persisted log line:
 
 - LLM API key
-- MCP server credentials
-- RAG cluster URL and credentials
+- Per-connector credentials (MCP `auth`, RAG backend `auth`) and upstream URLs (MCP `url`, RAG `cluster`)
 - S3 cold-storage credentials
 
 The browser holds exactly **one** secret: the short-lived JWT.

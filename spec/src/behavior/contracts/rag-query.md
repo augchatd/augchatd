@@ -5,43 +5,53 @@ status: proposed
 capability: cap-chat
 evidence:
   - source: README.md@e562b2b
-    section: "README header (tools.rag.backend) / What augchatd does (Runs retrieval) / What augchatd does NOT do (ingest)"
+    section: "What augchatd does (Runs retrieval) / What augchatd does NOT do (ingest)"
+  - source: README.md
+    section: "README header (connectors paragraph)"
 links:
   - relation: satisfies
     target: req-002-rag-scoping
   - relation: depends_on
     target: contract-session-chat
+  - relation: depends_on
+    target: contract-connector-toggle
   - relation: constrains
     target: contract-session-create
+  - relation: refines
+    target: adr-0010-unified-connector-model
 ---
 
 # Contract — RAG retrieval
 
 ## Promise
 
-When a session has `tools.rag` provisioned and the LLM invokes the RAG tool during a chat turn, augchatd:
+When a conversation has one or more **active RAG-type connectors** (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)) and the LLM invokes the retrieval tool exposed by one of them during a chat turn, augchatd:
 
-1. Resolves the backend kind: `opensearch` (hybrid BM25 + kNN, native) or `pgvector` (vector-only out of the box).
-2. Builds a query constrained to the session's allowed indexes (OpenSearch) or tables (pgvector).
-3. Authenticates with the session's RAG-backend credentials.
-4. Returns hits to the LLM.
+1. Resolves the backend kind from the connector's `backend` field — currently always `"opensearch"` (hybrid BM25 + kNN, native). pgvector is a future option (see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)).
+2. Builds a query constrained to **that connector's `indexes[]`**.
+3. Authenticates with that connector's `auth` credentials against the connector's `cluster`.
+4. Returns hits to the LLM, tagged with the connector's `descriptive_id` so the LLM (and the streamed indicator) know which knowledge base they came from.
 
-Scope is applied **before** query construction. The LLM cannot express a query that escapes the allowed scope; the tool surface only exposes the allowed set.
+Scope is applied **before** query construction. The LLM cannot express a query that escapes the connector's `indexes[]`; the tool surface only exposes that set. RAG-type connectors **inactive for the current conversation** are not exposed to the LLM at the start of the turn (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)).
 
 ## Observable outcomes
 
-- A query captured at the backend lists only allowed indexes/tables.
-- Two concurrent sessions with disjoint scopes against the same OpenSearch cluster produce disjoint captured queries.
-- An LLM tool call naming a disallowed index produces either a refusal or a query restricted to the allowed set.
+- A query captured at the backend lists only the connector's allowed indexes.
+- Two concurrent sessions with disjoint RAG connectors against the same OpenSearch cluster produce disjoint captured queries.
+- An LLM tool call naming a disallowed index produces either a refusal or a query restricted to the active connector's allowed set.
+- A session with two active RAG connectors (e.g. `rag_public` and `rag_internal`) exposes each one to the LLM with its own scope; each query is scoped to that connector's indexes.
+- A RAG-type connector toggled off is absent from the tool list of the next chat turn.
 
 ## Non-promises
 
 - augchatd does not ingest, chunk, or embed documents.
-- augchatd does not blend pgvector with `tsvector` automatically — pgvector is vector-only out of the box; the integrator owns any lexical layer.
-- augchatd does not rank or re-rank cross-index; that is the backend's responsibility.
+- augchatd does not rank or re-rank cross-connector; that is the backend's (or the LLM's) responsibility.
+- augchatd does not support pgvector today; the `backend` enum only accepts `"opensearch"`.
 
 ## Tests this contract implies
 
-- OpenSearch hybrid query for a session with two allowed indexes — captured query lists exactly those two.
-- pgvector query for a session with one allowed table — captured SQL/query references only that table.
-- Negative test: LLM tool call mentioning a disallowed index — assertion that the outbound query does not contain it.
+- OpenSearch hybrid query for a connector with two allowed indexes — captured query lists exactly those two.
+- A session with two active RAG connectors hits each backend independently with its own credentials and indexes.
+- Negative test: LLM tool call mentioning an index not in any active connector's `indexes[]` — assertion that no outbound query contains it.
+- Toggling a RAG-type connector off for a conversation via `PUT /conversations/:cid/connectors/:descriptive_id` removes its retrieval tool from the next turn of that conversation; it remains exposed for chat against other conversations where the connector is active.
+- A connector with `backend: "pgvector"` in the session payload is **rejected at session creation** (unknown backend) — see [contract-session-create](session-create.md).
