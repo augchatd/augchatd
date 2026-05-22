@@ -44,7 +44,9 @@ A connector has:
   - `mcp` → `url`, `auth`.
   - `rag` → `backend` (currently `"opensearch"`; pgvector is a future option — see [pressure-pgvector-backend](../pressure/pgvector-backend.md)), `cluster`, `auth`, `indexes[]`.
 
-**Active state.** At any moment, each connector in a session is either active or inactive. The state starts at `default_active` and the end user can toggle it via the bundled UI (`GET /connectors`, `PUT /connectors/:descriptive_id`). **Only active connectors expose tools to the LLM.** The active set is captured at the start of each chat turn — toggling mid-turn does not abort an in-flight tool call.
+**Active state (per conversation).** Each connector has a **per-conversation** active flag — the same connector can be active in one conversation and inactive in another. For a brand-new conversation, the flag starts at `default_active`. The end user toggles it via the bundled UI (`GET /conversations/:cid/connectors`, `PUT /conversations/:cid/connectors/:descriptive_id`). **Only active connectors for the current conversation expose tools to the LLM.** The active set is captured at the start of each chat turn — toggling mid-turn does not abort an in-flight tool call.
+
+The active state is **persisted as part of the conversation** (hot SQLite, flushed to cold S3) — it survives session re-mints, JWT refreshes, and resumes. Different conversations of the same user are independent.
 
 **Scope rule.** The integrator's application **resolves the scope** — which connectors get provisioned — at session creation. The end user can only **narrow** the scope (turn connectors off), never extend it. Adding a new connector requires a new session.
 

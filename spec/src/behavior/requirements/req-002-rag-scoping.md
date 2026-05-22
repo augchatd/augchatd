@@ -30,7 +30,7 @@ A scope-as-post-filter design is one MCP-driven typo or prompt-injected query aw
 - A session whose `rag_engineering` connector allows `["engineering-docs", "private-42"]` can search those indexes via that connector and no others.
 - A second session whose `rag_sales` connector allows `["sales-docs"]` running concurrently against the same OpenSearch cluster searches `sales-docs` and no others.
 - An LLM attempt to express "search everything" reaches the backend only as queries against the active connectors' allowed indexes.
-- A connector toggled off via `PUT /connectors/:descriptive_id` is not exposed to the LLM on the next turn, so no query references its indexes.
+- A connector toggled off for a conversation via `PUT /conversations/:cid/connectors/:descriptive_id` is not exposed to the LLM on the next turn of that conversation, so no query references its indexes — while the same connector remains exposed for other conversations where it is active.
 
 ## Acceptance
 

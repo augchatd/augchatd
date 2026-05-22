@@ -56,4 +56,4 @@ The browser sees the *tool was called* with the connector's `descriptive_id` / `
 - Two concurrent sessions, two distinct credentials captured (each session's connector).
 - Stdio attempt (no HTTP/SSE URL) is rejected at session creation.
 - MCP 401 surfaces as 401 to the browser.
-- Toggling an MCP-type connector off via `PUT /connectors/:descriptive_id` removes it from the next turn's tool exposure.
+- Toggling an MCP-type connector off for a conversation via `PUT /conversations/:cid/connectors/:descriptive_id` removes it from the next turn's tool exposure in that conversation; chat against other conversations where the connector is active keeps using it.

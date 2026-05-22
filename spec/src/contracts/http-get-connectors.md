@@ -12,6 +12,12 @@ links:
 
 # Technical contract — `GET /connectors`
 
+## Purpose
+
+Returns the session's **resolved scope** — the list of connectors the integrator provisioned for this session, without per-conversation active state. Useful for previewing what's available before creating a conversation, or for rendering a connector reference in the UI.
+
+For per-conversation active state, use [`GET /conversations/:conversation_id/connectors`](http-get-conversation-connectors.md).
+
 ## Auth
 
 **JWT** (Bearer). Same JWT that authorizes `POST /chat` and the conversation CRUD endpoints.
@@ -32,19 +38,17 @@ No body.
   {
     "descriptive_id": "rag_public",
     "name":           "Base de conhecimentos pública",
-    "type":           "rag",
-    "active":         true
+    "type":           "rag"
   },
   {
     "descriptive_id": "mcp_github",
     "name":           "GitHub (user OAuth)",
-    "type":           "mcp",
-    "active":         false
+    "type":           "mcp"
   }
 ]
 ```
 
-Each entry has exactly these four fields. **No credentials, no upstream URLs, no `auth`, no `cluster`, no `indexes` are returned** — those are server-side state only.
+Each entry has exactly these three fields. **No `active` flag** (active state is per-conversation; see [`GET /conversations/:cid/connectors`](http-get-conversation-connectors.md)). **No credentials, no upstream URLs, no `auth`, no `cluster`, no `indexes` are returned** — those are server-side state only.
 
 ## Response — failure modes
 
@@ -57,4 +61,5 @@ The response preserves the order of the `connectors[]` array as it appeared in t
 ## Related
 
 - Behavior: [contract-connector-toggle](../behavior/contracts/connector-toggle.md)
-- Mutation: [http-put-connector-state](http-put-connector-state.md)
+- Per-conversation active state: [http-get-conversation-connectors](http-get-conversation-connectors.md)
+- Per-conversation toggle: [http-put-conversation-connector-state](http-put-conversation-connector-state.md)

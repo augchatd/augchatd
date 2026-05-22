@@ -29,11 +29,12 @@ The browser API supports:
 - receive streamed reply
 
 **Connectors** (see [contract-connector-toggle](../behavior/contracts/connector-toggle.md)):
-- list connectors with active state — [GET /connectors](http-get-connectors.md)
-- toggle a connector's active state — [PUT /connectors/:descriptive_id](http-put-connector-state.md)
+- list the session's resolved scope (no active flag) — [GET /connectors](http-get-connectors.md)
+- list a conversation's connectors with active state — [GET /conversations/:cid/connectors](http-get-conversation-connectors.md)
+- toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
 
 > [!NOTE] Assumption
-> The README does not enumerate exact paths/verbs for the conversation endpoints. They are an evidence gap until code lands. Likely RESTful (`GET /conversations`, `POST /conversations`, `DELETE /conversations/:id`, `POST /chat` or `POST /conversations/:id/messages` or similar) but unconfirmed. The connector endpoints **are** specified — see the two technical-contract files linked above.
+> The README does not enumerate exact paths/verbs for the conversation endpoints (`GET /conversations`, `POST /conversations`, etc.). They are an evidence gap until code lands. Likely RESTful (`POST /conversations`, `GET /conversations`, `GET /conversations/:id`, `DELETE /conversations/:id`, `POST /chat` or `POST /conversations/:id/messages`) but unconfirmed. The connector endpoints **are** specified — see the three technical-contract files linked above.
 
 ## Streaming protocol
 

@@ -53,5 +53,5 @@ Scope is applied **before** query construction. The LLM cannot express a query t
 - OpenSearch hybrid query for a connector with two allowed indexes — captured query lists exactly those two.
 - A session with two active RAG connectors hits each backend independently with its own credentials and indexes.
 - Negative test: LLM tool call mentioning an index not in any active connector's `indexes[]` — assertion that no outbound query contains it.
-- Toggling a RAG-type connector off via `PUT /connectors/:descriptive_id` removes its retrieval tool from the next turn.
+- Toggling a RAG-type connector off for a conversation via `PUT /conversations/:cid/connectors/:descriptive_id` removes its retrieval tool from the next turn of that conversation; it remains exposed for chat against other conversations where the connector is active.
 - A connector with `backend: "pgvector"` in the session payload is **rejected at session creation** (unknown backend) — see [contract-session-create](session-create.md).

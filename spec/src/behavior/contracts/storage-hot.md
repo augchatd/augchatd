@@ -30,6 +30,8 @@ While any session for a given (tenant, user) is live, that user's conversation s
 
 This partitioning eliminates write contention between concurrent end users of the same tenant — each user has their own SQLite writer lock.
 
+Each conversation in the file holds, alongside its messages, the **per-conversation connector active state** (a map `descriptive_id → active boolean`). See [contract-connector-toggle](connector-toggle.md) and [adr-0010](../../architecture/adrs/0010-unified-connector-model.md).
+
 ## Observable outcomes
 
 - A live chat turn reads and writes through the hot DB.

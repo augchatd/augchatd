@@ -17,22 +17,27 @@ augchatd process
 │   ├── mTLS endpoints: POST /sessions, DELETE /sessions/:id
 │   ├── demo endpoint (mode=demo only): GET /demo/jwt
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
-│   ├── JWT endpoints: chat, conversation CRUD, GET/PUT /connectors (browser API)
+│   ├── JWT endpoints: chat, conversation CRUD,
+│   │                   GET /connectors (resolved scope),
+│   │                   GET /conversations/:cid/connectors (active per conversation),
+│   │                   PUT /conversations/:cid/connectors/:descriptive_id (toggle)
 │   └── static UI serving (same origin, /)
 │
 ├── Session registry (in-memory)
-│   └── { session_id → { user_id, model+key, connectors[], storage, ttl } }
-│        each connector: { descriptive_id, name, type, active, type-specific config }
+│   └── { session_id → { user_id, model+key, connectors[] (resolved scope), storage, ttl } }
+│        each connector: { descriptive_id, name, type, default_active, type-specific config }
+│        — active flag lives per conversation in hot SQLite, not here
 │
 ├── Tool-use loop
 │   ├── LLM driver (Vercel AI SDK; Anthropic, OpenAI, …)
-│   └── Connector dispatcher (type-routed; only active connectors exposed per turn)
+│   └── Connector dispatcher (type-routed; only the conversation's active connectors exposed per turn)
 │        ├── MCP client (HTTP/SSE, per-connector credentials)
 │        └── RAG client (OpenSearch hybrid; pgvector is future)
 │
 ├── Hot storage
 │   └── Bun embedded SQLite, one DB per (mTLS tenant, user)
 │        layout: data/<tenantId>/<userId>.sqlite
+│        each conversation holds messages + per-connector active state
 │
 ├── Cold storage driver
 │   └── S3-compatible client (per-session bucket + creds)

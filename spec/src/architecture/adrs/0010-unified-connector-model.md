@@ -60,18 +60,34 @@ Each connector entry has these common fields:
 
 ### Active state and the scope rule
 
-Each connector carries an *active* boolean per session:
+Each connector carries an *active* boolean **per conversation** (not per session):
 
-- It **starts** at `default_active`.
-- The browser can **read** the current set via `GET /connectors` and **toggle** an individual entry via `PUT /connectors/:descriptive_id { active }` — both JWT-authenticated; see [http-get-connectors](../../contracts/http-get-connectors.md) and [http-put-connector-state](../../contracts/http-put-connector-state.md).
-- When the LLM is invoked, **only active connectors' tools are exposed** to it.
+- It **starts** at `default_active` when a brand-new conversation is created.
+- The browser can **read** the active set for a conversation via `GET /conversations/:cid/connectors` and **toggle** an entry via `PUT /conversations/:cid/connectors/:descriptive_id { active }` — both JWT-authenticated. The session-wide `GET /connectors` returns the resolved scope only (no active flag). See [http-get-connectors](../../contracts/http-get-connectors.md), [http-get-conversation-connectors](../../contracts/http-get-conversation-connectors.md), [http-put-conversation-connector-state](../../contracts/http-put-conversation-connector-state.md).
+- When the LLM is invoked for a chat turn against a conversation, **only that conversation's active connectors' tools are exposed**.
 - The active set is captured at the start of each chat turn — toggling mid-turn does not abort an in-flight tool call.
 
 **Scope rule** (foundational invariant):
 
-> The integrator decides the *resolved scope* — the connectors[] list — at session creation. The end user can only **narrow** that scope by toggling connectors off. They cannot extend it. Provisioning a new connector requires a new session.
+> The integrator decides the *resolved scope* — the connectors[] list — at session creation. The end user can only **narrow** that scope by toggling connectors off **for one conversation**. They cannot extend it. Provisioning a new connector requires a new session.
 
 This preserves the existing principle that augchatd does not decide permissions; it enforces the scope the integrator already resolved.
+
+### Persistence of active state (per conversation)
+
+Active state is persisted **alongside the conversation it belongs to** — in the same hot SQLite that holds the conversation's messages, flushed to the same cold S3 bucket on disconnect or 5-minute idle. This has three consequences:
+
+1. **Survives session re-mints.** A toggle made in conversation `X` persists across JWT expiry, idle flush, forced delete + re-mint, browser refresh, etc. The next session that loads `X` sees the saved active states; the user does not have to retoggle.
+2. **Per-conversation independence.** Conversations of the same user are independent — the user can have one conversation scoped to a single RAG (e.g. "public KB only") while another has all connectors on.
+3. **Stays consistent with the "no own vault" promise.** augchatd does not introduce a new persistence surface — active state rides the existing conversation storage layer (the integrator's S3 ultimately owns it for cold).
+
+**Reconciliation rules when the resolved scope changes between sessions:**
+
+| Connector situation | Active state on reload |
+| --- | --- |
+| In saved state AND in current scope | Restored to the saved flag |
+| In current scope AND not in saved state | Starts at the connector's current `default_active` |
+| In saved state AND no longer in current scope | Silently dropped from the response. If the integrator re-adds the same `descriptive_id` later, the saved flag returns |
 
 ## Consequences
 
