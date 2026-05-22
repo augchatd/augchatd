@@ -13,12 +13,12 @@ Concepts that recur across bounded contexts, each tied to where they are introdu
 
 ## Session
 
-A bag of: `user_id`, `system_prompt`, `model + key`, `mcp_servers?`, `rag?`, `storage.s3`.
+A bag of: `user_id`, `system_prompt`, `model + key`, `connectors[]?`, `storage.s3`.
 Issued a `session_id` and a `jwt` (signature-validated). The session's lifetime is **exactly the JWT TTL** — configurable via `ttl_seconds` at creation time (default 60s for development; production typically ~30 min). When the JWT expires, the session is gone; the conversation it was attached to survives in storage.
 
 Identified to the integrator by `session_id`; identified to the browser by the JWT. A session can also be ended explicitly via `DELETE /sessions/:id` (mTLS) — see [contract-session-delete](../behavior/contracts/session-delete.md).
 
-Minimal session is `model + storage`. `mcp_servers` and `rag` are independently optional.
+Minimal session is `model + storage`. `connectors[]` is optional — a session with an empty `connectors[]` is a plain chat with no tools or retrieval.
 
 ## Conversation
 
@@ -30,6 +30,26 @@ Persistent chat history, identified by `conversation_id`. A conversation:
 
 The browser owns the choice of which conversation to load; the integrator's backend mints sessions but does not directly manipulate conversations.
 
+## Connector
+
+A **tool or retrieval provider** attached to a session. Provisioned as one entry in the session's `connectors[]` list.
+
+A connector has:
+
+- **`descriptive_id`** (string, unique within the session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_schooldrive_user_session"`.
+- **`name`** (string) — display-friendly label shown by the bundled UI.
+- **`type`** (enum) — `"mcp"` (an MCP server) or `"rag"` (a retrieval backend). Extensible.
+- **`default_active`** (boolean) — the connector's active state at session start.
+- **Type-specific configuration** (flat, alongside the common fields):
+  - `mcp` → `url`, `auth`.
+  - `rag` → `backend` (currently `"opensearch"`; pgvector is a future option — see [pressure-pgvector-backend](../pressure/pgvector-backend.md)), `cluster`, `auth`, `indexes[]`.
+
+**Active state.** At any moment, each connector in a session is either active or inactive. The state starts at `default_active` and the end user can toggle it via the bundled UI (`GET /connectors`, `PUT /connectors/:descriptive_id`). **Only active connectors expose tools to the LLM.** The active set is captured at the start of each chat turn — toggling mid-turn does not abort an in-flight tool call.
+
+**Scope rule.** The integrator's application **resolves the scope** — which connectors get provisioned — at session creation. The end user can only **narrow** the scope (turn connectors off), never extend it. Adding a new connector requires a new session.
+
+See [adr-0010-unified-connector-model](../architecture/adrs/0010-unified-connector-model.md).
+
 ## Credential
 
 A secret that authorizes a network call. Five kinds appear:
@@ -37,7 +57,7 @@ A secret that authorizes a network call. Five kinds appear:
 - **mTLS client cert** — integrator's backend → augchatd (server-to-server).
 - **JWT** — browser → augchatd (per-session).
 - **LLM API key** — augchatd → LLM provider (per session, end user's or integrator's).
-- **MCP auth** (typically bearer) — augchatd → MCP server (per session, end user's OAuth token).
+- **Connector credentials** — augchatd → an upstream connector (a per-connector secret, e.g. an MCP bearer token or RAG backend credentials).
 - **S3 credentials** — augchatd → S3-compatible storage (per session, integrator's bucket).
 
 Credentials never leave their lane:
@@ -46,13 +66,12 @@ Credentials never leave their lane:
 
 ## Scope
 
-The set of resources a session may touch. Set at session creation, enforced on every message:
+The set of resources a session may touch. Two layers:
 
-- Which MCP servers (URLs + per-server auth).
-- Which RAG indexes (subset of the backend's catalogue).
-- Which S3 bucket prefix is the cold-storage target.
+1. **Resolved scope** — the integrator's application decides this at session creation and passes it as the session payload: which connectors (their types and configs), which S3 bucket. augchatd does **not** decide this.
+2. **Active scope** — at any moment, the subset of the resolved scope currently enabled. Starts equal to the resolved set (modulo each connector's `default_active`); the end user can toggle individual connectors off to narrow it. **The active scope can only be a subset of the resolved scope** — augchatd never extends what the integrator declared.
 
-Scope is supplied by the integrator. augchatd does not compute it.
+augchatd **enforces** the active scope on every message and tool call; it does not compute it.
 
 ## Expiry & refresh
 

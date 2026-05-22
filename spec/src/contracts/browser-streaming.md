@@ -18,16 +18,22 @@ JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md) (
 
 ## Surface (declared minimum)
 
-The README states the browser API supports:
+The browser API supports:
 
+**Conversations:**
 - list conversations
 - create conversation
+- get a conversation's history
 - delete conversation
-- send a message
+- send a message (chat)
 - receive streamed reply
 
+**Connectors** (see [contract-connector-toggle](../behavior/contracts/connector-toggle.md)):
+- list connectors with active state — [GET /connectors](http-get-connectors.md)
+- toggle a connector's active state — [PUT /connectors/:descriptive_id](http-put-connector-state.md)
+
 > [!NOTE] Assumption
-> The README does not enumerate exact paths/verbs. They are an evidence gap until code lands. Likely RESTful (`GET /conversations`, `POST /conversations`, `DELETE /conversations/:id`, `POST /conversations/:id/messages` or similar) but unconfirmed.
+> The README does not enumerate exact paths/verbs for the conversation endpoints. They are an evidence gap until code lands. Likely RESTful (`GET /conversations`, `POST /conversations`, `DELETE /conversations/:id`, `POST /chat` or `POST /conversations/:id/messages` or similar) but unconfirmed. The connector endpoints **are** specified — see the two technical-contract files linked above.
 
 ## Streaming protocol
 
@@ -45,11 +51,10 @@ That stream carries:
 Per [req-003](../behavior/requirements/req-003-server-side-secrets.md):
 
 - LLM API key
-- MCP credentials or URLs
-- RAG cluster URL or credentials
+- Connector credentials (MCP auth, RAG backend auth) or upstream URLs (MCP URL, RAG cluster)
 - S3 credentials
 
-Tool indicators are sanitized at the augchatd boundary.
+Tool indicators are sanitized at the augchatd boundary; they carry connector `descriptive_id` / `name` but never `auth`, `url`, `cluster`, or `indexes`.
 
 ## Related
 

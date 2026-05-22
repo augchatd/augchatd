@@ -14,7 +14,7 @@ This is the consolidated list of what augchatd refuses to do, by category. See [
 ## Identity & policy
 
 - Manage users.
-- Enforce permissions about which user can use which MCP / which RAG indexes (integrator passes the result of that decision at setup).
+- **Decide** which user can use which connector / index / tool. The integrating application resolves this; augchatd applies the resolved scope on every message. **Enforcement of an already-resolved scope is in scope; deciding the scope is not.**
 
 ## MCP
 
@@ -24,6 +24,11 @@ This is the consolidated list of what augchatd refuses to do, by category. See [
 ## RAG
 
 - Ingest, chunk, or embed documents.
+- Support `backend: "pgvector"` — currently only `"opensearch"`. pgvector is a future option ([pressure-pgvector-backend](../pressure/pgvector-backend.md)).
+
+## Connectors
+
+- Allow the end user to **add** a connector mid-conversation. The connector list is fixed at session creation; toggles can only narrow it. Adding requires a new session.
 
 ## Storage & data
 

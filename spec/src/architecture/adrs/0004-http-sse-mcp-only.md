@@ -25,7 +25,7 @@ Integrators that want to use a stdio-only MCP wrap it in a small HTTP/SSE bridge
 ## Consequences
 
 - Every MCP augchatd talks to is a network endpoint with stable URL + auth.
-- The session payload's `mcp_servers[]` is a clean `{ url, auth }` shape.
+- Each MCP-type connector in the session payload's `connectors[]` is a clean `{ url, auth }` shape (plus the common connector fields). See [adr-0010-unified-connector-model](0010-unified-connector-model.md).
 - Public stdio-only MCPs require a bridge for use; documented in README.
 - No subprocess management inside augchatd.
 

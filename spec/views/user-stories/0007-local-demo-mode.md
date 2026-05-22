@@ -44,6 +44,27 @@ Given I have a working demo
   And GET /healthz reports "mode": "prod" (which my deploy gate can assert)
 ```
 
+## Scenario — POST /sessions is refused in demo mode
+
+```
+Given augchatd is running with AUGCHATD_MODE=demo
+ When something (a confused operator, a misrouted production caller, a probe) attempts POST /sessions
+ Then augchatd returns 404
+  And the only session that exists is the boot-time demo session
+  And no per-request provisioning happens
+```
+
+## Scenario — demo connectors via DEMO_CONNECTORS
+
+```
+Given I want to try the demo with a knowledge base attached
+ When I add -e DEMO_CONNECTORS='[{"descriptive_id":"rag_public","name":"Public docs","type":"rag","default_active":true,"backend":"opensearch","cluster":"https://my-os/","auth":{"bearer":"..."},"indexes":["public"]}]' to my docker run
+ Then the bundled UI shows the connector panel with rag_public listed
+  And GET /connectors returns it with active: true
+  And the assistant can retrieve from it
+  And I can toggle it off via the UI to test the toggle flow
+```
+
 ## Why this matters
 
 The two-mode design lets evaluation cost stay low without splitting the chat code path or shipping a separate artifact. The demo serves as a continuous smoke test for the production path.

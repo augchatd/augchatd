@@ -35,16 +35,26 @@ links:
     "model_id": "claude-opus-4-7",
     "api_key": "sk-ant-..."
   },
-  "mcp_servers": [
-    { "url": "https://your-mcp/", "auth": { "bearer": "..." } }
-  ],
-  "tools": {
-    "rag": {
-      "backend": "opensearch",
-      "cluster": "https://your-opensearch/",
-      "indexes": ["docs"]
+  "connectors": [
+    {
+      "descriptive_id": "rag_public",
+      "name":           "Base de conhecimentos pública",
+      "type":           "rag",
+      "default_active": true,
+      "backend":        "opensearch",
+      "cluster":        "https://your-opensearch/",
+      "auth":           { "bearer": "..." },
+      "indexes":        ["public-docs"]
+    },
+    {
+      "descriptive_id": "mcp_github",
+      "name":           "GitHub (user OAuth)",
+      "type":           "mcp",
+      "default_active": true,
+      "url":            "https://your-mcp/",
+      "auth":           { "bearer": "ghu_..." }
     }
-  },
+  ],
   "storage": { "s3": "s3://AKIA...@your-bucket/" }
 }
 ```
@@ -59,11 +69,38 @@ links:
 ### Optional fields
 
 - `ttl_seconds` — JWT lifetime in seconds. **Default `60`**, deliberately low so development exercises the refresh path frequently. Production typically uses ~`1800` (30 min) to amortize refresh latency. The returned `expires_at` reflects the chosen TTL.
-- `mcp_servers[]` — each entry `{ url, auth }`. Independently optional.
-- `tools.rag` — `{ backend: "opensearch" | "pgvector", cluster, indexes }` (OpenSearch shape; pgvector shape **not yet specified in evidence — see assumption below**). Independently optional.
+- `connectors[]` — list of tools/retrieval providers attached to this session. Each entry carries the common fields (`descriptive_id`, `name`, `type`, `default_active`) plus type-specific fields. See the per-type shapes below. Independently optional — an empty/absent `connectors[]` is a session with no tools or retrieval. See [adr-0010-unified-connector-model](../architecture/adrs/0010-unified-connector-model.md).
 
-> [!NOTE] Assumption
-> The pgvector connection-string shape is not given in the README. The shape will be specified once code introduces it; for now it is an evidence gap.
+### Connector entry — common fields (always required)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `descriptive_id` | string | Unique within the session. Used by the browser to address the connector (e.g. for toggling) and by augchatd in tool-call indicators. Examples: `"rag_public"`, `"mcp_schooldrive_user_session"`. |
+| `name` | string | Human-friendly display label shown by the bundled UI. |
+| `type` | enum | `"mcp"` \| `"rag"`. Determines the per-type fields required. |
+| `default_active` | boolean | Initial active state for this connector when the session starts. |
+
+### Connector entry — `type: "mcp"`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `url` | string | HTTP/SSE endpoint. Stdio MCPs require a bridge (see [adr-0004](../architecture/adrs/0004-http-sse-mcp-only.md)). |
+| `auth` | object | Per-call auth (typically `{ "bearer": "..." }`). |
+
+### Connector entry — `type: "rag"`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `backend` | enum | Currently `"opensearch"`. `"pgvector"` is a future option, **not accepted today** — see [pressure-pgvector-backend](../pressure/pgvector-backend.md). A payload with any other value is rejected at session creation. |
+| `cluster` | string | Backend URL. |
+| `auth` | object | Backend credentials. |
+| `indexes` | string[] | OpenSearch indexes this connector is scoped to. |
+
+### Validation rules
+
+- Each `descriptive_id` is unique within the session.
+- Each connector's `type` matches a known enum value; per-type required fields are all present.
+- For `type: "rag"`, `backend` is `"opensearch"` (other values rejected for now).
 
 ## Response — success
 

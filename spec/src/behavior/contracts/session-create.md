@@ -25,24 +25,28 @@ Given a valid mTLS client cert and a JSON payload containing at minimum `user_id
 
 1. **Validates** the payload shape.
 2. **Tests S3 writability** against the supplied bucket and credentials. If it cannot write, the request fails with a 4xx and **no session is created**.
-3. **Stores** the credentials in process memory keyed by a new `session_id`.
+3. **Stores** the credentials and the **connector registry** in process memory keyed by a new `session_id`. Each connector's initial active flag is set from its `default_active`.
 4. **Mints** a JWT (signature-validated, short-lived, minutes).
 5. **Returns** `{ session_id, jwt, expires_at }`.
 
-If `mcp_servers` is present, those servers (with their per-server auth) are stored alongside the session. If `tools.rag` is present, the RAG backend address, credentials, and scope are stored. Both are independently optional.
+If `connectors[]` is present, each entry is parsed by its `type` (`mcp` | `rag`), validated (required fields per type), and added to the session's connector registry. Connector credentials live in process memory for the session's lifetime. The list is optional — a session with no connectors gives a plain chat with no tools or retrieval. See [adr-0010](../../architecture/adrs/0010-unified-connector-model.md).
+
+The integrator is the sole authority on **which** connectors a session gets (the *resolved scope*); augchatd does not decide policy, it enforces what the payload declared.
 
 ## Observable outcomes
 
 - A 2xx response on success carrying the three fields.
 - A 4xx on a setup that cannot reach S3 — no session exists in memory afterwards.
 - A 4xx on missing required fields (`user_id`, `system_prompt`, `model`, `storage.s3`).
+- A 4xx on a malformed connector entry (unknown `type`, missing required per-type fields, duplicate `descriptive_id` within the same session).
 - A successful response after which the same `session_id` is unknown to a second augchatd process (sessions are per-process).
 
 ## Non-promises
 
 - augchatd does not validate that the LLM key works (provider call only happens at chat time).
-- augchatd does not validate that MCP servers are reachable (failure surfaces during chat).
+- augchatd does not validate that a connector's upstream is reachable (failure surfaces during chat).
 - augchatd does not enforce that `user_id` is unique across sessions — concurrent sessions for the same user are allowed.
+- augchatd does not deduplicate connectors across sessions; each session carries its own `connectors[]`.
 
 ## Tests this contract implies
 
@@ -50,4 +54,6 @@ If `mcp_servers` is present, those servers (with their per-server auth) are stor
 - mTLS without a cert or with an untrusted cert is rejected.
 - S3 unreachable → 4xx, no session created.
 - Minimal payload (just `model + storage`) creates a working session.
-- Payload with `mcp_servers` and `rag` creates a session that exposes those at chat time.
+- Payload with `connectors[]` of mixed types (`mcp` + `rag`) creates a session that exposes the active subset at chat time.
+- Payload with a duplicate `descriptive_id` in `connectors[]` → 4xx, no session created.
+- Payload with an unknown `type` → 4xx, no session created.

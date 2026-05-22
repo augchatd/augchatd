@@ -31,18 +31,27 @@ Boundaries:
 - Streams replies in the assistant-ui native protocol (Vercel AI SDK data stream).
 - Uses *only* the session's provisioned credentials and scope.
 
-## 3. MCP integration
+## 3. Connector lifecycle and dispatch
 
-Owns: making per-message MCP calls with the end user's credentials.
+Owns: per-session connector registry; list/toggle endpoints for the browser; routing each chat-turn tool call to the right connector type. Each connector is either MCP-type or RAG-type (extensible).
+
+Boundaries:
+- Only **active** connectors are exposed to the LLM at the start of a chat turn.
+- The integrator declares the connector list at session creation; the end user can only narrow it via toggles, not extend.
+- Credentials live in the session's connector registry (in-memory); never exposed to the browser.
+
+## 3a. MCP-type connector
+
+Owns: making per-call MCP requests with that connector's credentials.
 
 Boundaries:
 - HTTP/SSE only.
-- Stateless per call; credentials are pulled from the in-memory session.
+- Stateless per call; credentials pulled from the connector's slot in the session registry.
 - 401 from an MCP surfaces as 401 to the browser (triggers JWT refresh path).
 
-## 4. RAG retrieval
+## 3b. RAG-type connector
 
-Owns: running a retrieval query, scoped to allowed indexes/tables, on either OpenSearch (hybrid BM25 + kNN) or pgvector (vector-only).
+Owns: running a retrieval query, scoped to that connector's allowed indexes, against an OpenSearch backend (pgvector is a future option — see [pressure-pgvector-backend](../pressure/pgvector-backend.md)).
 
 Boundaries:
 - Scope applied *before* query construction, not as a post-filter.

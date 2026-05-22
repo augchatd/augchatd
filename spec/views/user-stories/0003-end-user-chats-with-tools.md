@@ -19,21 +19,23 @@ audience: "Integrator product owner"
 
 ```
 Given I am user_42
-  And my session was created with my GitHub MCP and the "engineering-docs" + "private-42" RAG indexes
+  And my session was provisioned with two active connectors:
+        mcp_github (MCP, my OAuth token)
+        rag_engineering (RAG, indexes: ["engineering-docs", "private-42"])
  When I ask the chat to "find recent PRs against repo X and summarize them"
- Then the assistant calls the GitHub MCP with my OAuth token
+ Then the assistant calls the mcp_github connector with my OAuth token
   And the response streams back to my browser
-  And the streamed indicators show "tool: github" but never my token or the MCP URL
+  And the streamed indicators show "tool: mcp_github" (its descriptive_id / name) but never my token or the upstream URL
 ```
 
 ## Scenario — two end users at the same time
 
 ```
 Given user_42 and user_99 are in active concurrent sessions
-  And user_42 can search ["engineering-docs", "private-42"]
-  And user_99 can search ["sales-docs"]
+  And user_42's session has a rag connector with indexes ["engineering-docs", "private-42"]
+  And user_99's session has a rag connector with indexes ["sales-docs"]
  When both users ask "search for Q4 numbers"
- Then user_42's retrieval runs against engineering-docs + private-42
-  And user_99's retrieval runs against sales-docs
+ Then user_42's retrieval runs against engineering-docs + private-42 via user_42's connector
+  And user_99's retrieval runs against sales-docs via user_99's connector
   And neither user's results contain content the other user is allowed to see
 ```

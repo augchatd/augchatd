@@ -25,7 +25,7 @@ Browser (integrator page)         Integrator backend                augchatd
         │                                 │                              │
         │                                 │  POST /sessions (mTLS)       │
         │                                 │  { user_id, system_prompt,   │
-        │                                 │    model+key, mcp?, rag?,    │
+        │                                 │    model+key, connectors[]?, │
         │                                 │    storage.s3 }              │
         │                                 │ ────────────────────────►    │
         │                                 │                              │  (1) validate
@@ -53,4 +53,4 @@ Browser (integrator page)         Integrator backend                augchatd
 
 - The integrator backend never talks to the iframe; the iframe never talks back to the integrator backend except (via the parent page) to ask for a new JWT on 401.
 - The bundled UI is served from the same origin as the JSON API; the JWT is used for both ends of that origin.
-- `mcp_servers` and `tools.rag` are optional. Minimal session is `model + storage`.
+- `connectors[]` is optional. Minimal session is `model + storage`.

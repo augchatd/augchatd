@@ -14,8 +14,12 @@ curl -X POST https://augchatd.your-infra/sessions \
     "ttl_seconds": 60,
     "system_prompt": "You are a helpful assistant.",
     "model":       { "provider": "anthropic", "model_id": "claude-opus-4-7", "api_key": "sk-ant-..." },
-    "mcp_servers": [ { "url": "https://your-mcp/",    "auth": { "bearer": "..." } } ],
-    "tools":       { "rag": { "backend": "opensearch", "cluster": "https://your-opensearch/", "indexes": ["docs"] } },
+    "connectors": [
+      { "descriptive_id": "rag_public",  "name": "Public docs",         "type": "rag", "default_active": true,
+        "backend": "opensearch", "cluster": "https://your-opensearch/", "auth": { "bearer": "..." }, "indexes": ["public-docs"] },
+      { "descriptive_id": "mcp_github",  "name": "GitHub (user OAuth)", "type": "mcp", "default_active": true,
+        "url": "https://your-mcp/", "auth": { "bearer": "..." } }
+    ],
     "storage":     { "s3": "s3://AKIA...@your-bucket/" }
   }'
 # → { "session_id": "...", "jwt": "eyJ...", "expires_at": "..." }
@@ -40,7 +44,15 @@ curl -X POST https://augchatd.your-infra/sessions \
 
 `ttl_seconds` is the JWT lifetime (optional, default `60`). The low default is deliberate for development — it forces frequent refresh through your backend so the refresh path stays exercised. In production, raise it (e.g. `1800` for 30 min) to amortize refresh latency.
 
-`tools.rag.backend` can be `"opensearch"` (hybrid BM25 + kNN, native) or `"pgvector"` (vector-only out of the box; combine with your own `tsvector` index if you want lexical). `mcp_servers` and `tools.rag` are independently optional — minimal session is just `model + storage`.
+`connectors[]` is the unified list of tools and retrieval providers attached to the session. Each entry carries:
+
+- `descriptive_id` — unique within the session; used to address the connector (e.g. for toggling) and in tool-call indicators.
+- `name` — human-friendly label shown in the bundled UI.
+- `type` — `"mcp"` or `"rag"` (extensible).
+- `default_active` — initial active state; some entries may be provisioned but default off.
+- type-specific fields: `url` + `auth` for `mcp`; `backend` (currently only `"opensearch"` — hybrid BM25 + kNN; pgvector is a future option), `cluster`, `auth`, `indexes[]` for `rag`.
+
+The list is optional; minimal session is `model + storage`. Once the session is live, the bundled UI lets the **end user toggle individual connectors on/off** (`PUT /connectors/:descriptive_id`). The end user can only **narrow** the integrator's resolved scope (turn entries off) — they cannot add a connector mid-session. Adding requires a new session.
 
 The browser never sees the LLM key, the MCP credentials, the RAG cluster, or the storage credentials. Only your server-issued JWT, valid for minutes. The chat UI is bundled in the augchatd binary and served on the same origin as the API — built on [assistant-ui](https://github.com/assistant-ui/assistant-ui), shipped with the daemon, no separate UI to host.
 
@@ -79,9 +91,9 @@ docker run -p 8080:8080 \
 open http://localhost:8080
 ```
 
-Add `DEMO_MCP_SERVERS` and `DEMO_RAG_*` env vars to enable tools and retrieval. The browser loads the bundled UI from the same port, fetches a session JWT from `GET /demo/jwt`, then chats normally.
+Add `DEMO_CONNECTORS` (a JSON-encoded `connectors[]` array, same shape as the production payload) and `DEMO_S3_URI` (cold-storage bucket) to enable connectors and storage. The browser loads the bundled UI from the same port, fetches a session JWT from `GET /demo/jwt`, then chats normally.
 
-Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, and holds credentials in the process environment — and the bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, holds credentials in the process environment, and **does not accept `POST /sessions`** — the demo session is bound at process boot from env vars, not minted per request (calls to `POST /sessions` or `DELETE /sessions/:id` return 404). The bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
 
 augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "mode": "demo" | "prod", "status": "ok" }`. The `mode` field is the safety net for accidental demo deploys — fail your deploy if a production health check reports `"mode": "demo"`.
 
@@ -95,7 +107,7 @@ augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "m
                                           │
                        1. setup session (mTLS, server-to-server)
                           { user_id, system_prompt, model+key,
-                            mcp_servers?, rag_cluster+creds?,
+                            connectors[]? (mcp, rag, …),
                             s3_bucket+creds }   (? = optional)
                                           │
                                           ▼
@@ -154,21 +166,22 @@ augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "m
 
 ## What augchatd does
 
-- **Provisions per-user credentials and scope from your existing auth, at session creation.** Each session carries its own LLM key, MCP servers with the user's own OAuth tokens, and the exact RAG indexes that user is allowed to see. augchatd enforces all of this server-side for every message and tool call. Credentials live in memory for the session's lifetime — never persisted in plaintext logs, never sent to clients.
-- Runs the **tool-use loop** server-side, combining MCP tools (when provisioned), optional RAG retrieval, and the LLM response — using only the session's provisioned credentials and scope.
-- Runs **retrieval** against the session's RAG backend, when enabled: hybrid (BM25 + kNN) against your OpenSearch cluster, or vector against your pgvector store. Scoped to the indexes/tables the session allows.
+- **Provisions per-user credentials and scope from your existing auth, at session creation.** Each session carries its own LLM key plus a list of **connectors** (typed providers — `mcp`, `rag`, …) with the end user's specific credentials and scope. augchatd **enforces** the resolved scope server-side for every message and tool call — it does not decide it (the integrator's application owns policy). Credentials live in memory for the session's lifetime — never persisted in plaintext logs, never sent to clients.
+- Runs the **tool-use loop** server-side, combining the session's **active connectors** (MCP tools, RAG retrieval, …) with the LLM response — using only the connectors that are currently active and only their provisioned credentials.
+- Runs **retrieval** against the session's active RAG-type connectors, when present: hybrid (BM25 + kNN) against OpenSearch (pgvector is a future option). Each query is scoped to that connector's `indexes[]`.
 - **Tier-stores conversation history**: hot in internal SQLite databases managed by augchatd (one DB per `(tenant, user)`, ephemeral), cold in your S3-compatible bucket (passed in per session). See [Storage](#storage) above for lifecycle and durability semantics.
 - Ships a **bundled chat UI** (built on [assistant-ui](https://github.com/assistant-ui/assistant-ui)) served on the same origin as the API. You embed it as an `<iframe>` — no separate UI to host, no asset pipeline on your side.
-- Exposes a **minimal browser API** (consumed by the bundled UI): list/create/delete conversations, send messages. Streaming follows the assistant-ui native protocol (Vercel AI SDK data stream).
+- Exposes a **minimal browser API** (consumed by the bundled UI): list/create/delete conversations, send messages, list connectors and toggle their active state. Streaming follows the assistant-ui native protocol (Vercel AI SDK data stream).
 - **Isolates tenants** logically within a single process: mTLS at setup, JWT at chat time, per-session credentials in memory, per-(tenant, user) hot storage on disk. For mutually hostile tenants — or for any tenant whose load exceeds what one process can comfortably serve — deploy one augchatd process per tenant. Horizontal scaling within a single tenant requires sticky-by-`session_id` routing across processes; stateless load-balancing is not supported today (the session registry lives in process memory).
 
 ## What augchatd does NOT do
 
 - It does **not manage users**. Your software does, and tells augchatd who's connecting per session.
-- It does **not enforce permissions**. Your software decides what each session can access (which MCP servers, which RAG indexes) and passes that as setup config.
+- It does **not decide** policy. Your software decides which connectors a session may have (which MCP servers, which RAG indexes, which tools) and passes that as setup config. augchatd **enforces** the resolved active scope on every message — but enforcement is not decision; the integrator is always the policy authority.
+- It does **not** let the end user **add** connectors mid-conversation. The connector list is fixed at session creation; the user can only narrow it via the toggle. Adding requires a new session.
 - It does **not host MCP servers**. It's a *client* to MCP servers you operate.
 - It does **not connect to MCP servers over stdio**. HTTP/SSE only — stdio assumes the MCP runs co-located with the client, which doesn't fit a remote multi-tenant daemon whose per-session contract is URL + auth. Most public MCPs today are stdio-only; to use them with augchatd, wrap them in a small HTTP/SSE bridge (e.g. `mcpo`) — the bridge converts the local-only stdio model into the network contract augchatd needs.
-- It does **not ingest, chunk, or embed documents**. When RAG is enabled, augchatd only queries the backend (OpenSearch or pgvector) the session provides. Populate it with any pipeline you like; for OpenSearch we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
+- It does **not ingest, chunk, or embed documents**. When a RAG-type connector is present, augchatd only queries the backend (currently OpenSearch; pgvector is a future option) the connector provides. Populate it with any pipeline you like; for OpenSearch we recommend [DigitalOcean Gradient AI Knowledge Bases](https://www.digitalocean.com/products/gradient), which crawls Spaces, S3, Dropbox, or URLs and writes to OpenSearch for you.
 - It does **not store credentials at rest** beyond the lifetime of an active session.
 - It does **not encrypt conversation history client-side** before writing to S3. Configure server-side encryption (SSE-S3, SSE-KMS, or equivalent) on the bucket you provide. Client-side encryption is out of scope.
 - It does **not implement long-term memory or planning agents**. It's a tool-use loop, not an autonomous agent framework.
@@ -198,7 +211,7 @@ augchatd is opinionated about staying small. Your software already knows which O
 
 Early. OSS, currently maintained by a single author. The API and storage layout may change before `1.0`. The `augchatd/augchatd` Docker image referenced in Quickstart is **planned but not yet published**.
 
-Built with Bun, Hono, and TypeScript on the backend; the bundled UI is a React SPA built with Vite, embedding [assistant-ui](https://github.com/assistant-ui/assistant-ui), compiled into the binary as static assets. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). Hot conversation storage uses Bun's embedded SQLite, one database per `(tenant, user)` — no external DB or cache required for the daemon to run. When RAG is enabled, retrieval runs against OpenSearch (hybrid BM25 + kNN, native) or pgvector (vector-only out of the box; BYO `tsvector` for lexical).
+Built with Bun, Hono, and TypeScript on the backend; the bundled UI is a React SPA built with Vite, embedding [assistant-ui](https://github.com/assistant-ui/assistant-ui), compiled into the binary as static assets. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). Hot conversation storage uses Bun's embedded SQLite, one database per `(tenant, user)` — no external DB or cache required for the daemon to run. Tools and retrieval are delivered through a unified connector model (see ADR-0010 in `spec/src/architecture/adrs/`). When a RAG-type connector is present, retrieval runs against OpenSearch (hybrid BM25 + kNN, native); pgvector is a future option.
 
 ## License
 

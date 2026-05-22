@@ -11,7 +11,7 @@ evidence:
 
 augchatd is successful when an integrator can:
 
-1. **Provision a chat session** from their backend with one mTLS-protected HTTP call that hands over `user_id`, `system_prompt`, `model + key`, optional `mcp_servers`, optional `rag` backend, and an S3 bucket for cold storage — and receive a short-lived JWT in return.
+1. **Provision a chat session** from their backend with one mTLS-protected HTTP call that hands over `user_id`, `system_prompt`, `model + key`, optional `connectors[]` (MCP and/or RAG providers, each with its own credentials and scope), and an S3 bucket for cold storage — and receive a short-lived JWT in return.
 2. **Embed the bundled UI** as a single `<iframe>` and hand it the JWT via `postMessage`, with no separate frontend to host or deploy.
 3. **Trust that every message** routes the user's own MCP credentials and stays inside the RAG indexes that session is allowed to see — without writing the routing or scoping logic themselves.
 4. **Ship a PoC the same afternoon**, then graduate to production by switching `AUGCHATD_MODE` from `demo` to the mTLS-served `POST /sessions` flow — same binary, same contract.
