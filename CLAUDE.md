@@ -23,6 +23,15 @@ When any of these things happen, run the matching slash command:
 
 The commands' definitions live in [`.claude/commands/`](.claude/commands/). Each is a short checklist; you read it, you apply it.
 
+## Git workflow
+
+These rules prevent direct-to-main churn that caused early-iteration mistakes.
+
+- **Never push direct commits to `main`** (in either `origin` or `upstream`). The only writes to `main` come from merged PRs.
+- **All work happens on a feature branch.** Branch from `main`, commit there, push the branch.
+- **PRs are always opened on the upstream repo (`augchatd/augchatd`), never on the fork (`TiagoJacobs/augchatd`).** The fork holds your feature branch; the conversation, review, and merge happen upstream.
+- **After a PR merges**, sync the fork's main from upstream: `git fetch upstream && git checkout main && git reset --hard upstream/main && git push origin main --force-with-lease`. This is a sync of squashed upstream history, not new work — the only legitimate force-push to `main`.
+
 ## Hard rules (inherited from the playbook)
 
 - **Do not invent facts.** If something is not in the evidence, it is a gap; mark it.
