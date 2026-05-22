@@ -38,7 +38,7 @@ The integrator is the sole authority on **which** connectors a session gets (the
 - A 2xx response on success carrying the three fields.
 - A 4xx on a setup that cannot reach S3 — no session exists in memory afterwards.
 - A 4xx on missing required fields (`user_id`, `system_prompt`, `model`, `storage.s3`).
-- A 4xx on a malformed connector entry (unknown `type`, missing required per-type fields, duplicate `descriptive_id` within the same session).
+- A 4xx on a malformed connector entry: unknown `type`, missing required per-type fields, duplicate `descriptive_id` within the same session, or — for `type: "rag"` — `backend` other than `"opensearch"` (pgvector is not accepted today; see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)).
 - A successful response after which the same `session_id` is unknown to a second augchatd process (sessions are per-process).
 
 ## Non-promises
@@ -57,3 +57,5 @@ The integrator is the sole authority on **which** connectors a session gets (the
 - Payload with `connectors[]` of mixed types (`mcp` + `rag`) creates a session that exposes the active subset at chat time.
 - Payload with a duplicate `descriptive_id` in `connectors[]` → 4xx, no session created.
 - Payload with an unknown `type` → 4xx, no session created.
+- Payload with a RAG connector whose `backend` is `"pgvector"` (or any non-`"opensearch"` value) → 4xx, no session created.
+- Payload with a connector missing a per-type required field (e.g. `mcp` without `url`, `rag` without `indexes`) → 4xx, no session created.

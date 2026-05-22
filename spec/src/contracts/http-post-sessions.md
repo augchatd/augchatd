@@ -93,7 +93,7 @@ links:
 | --- | --- | --- |
 | `backend` | enum | Currently `"opensearch"`. `"pgvector"` is a future option, **not accepted today** — see [pressure-pgvector-backend](../pressure/pgvector-backend.md). A payload with any other value is rejected at session creation. |
 | `cluster` | string | Backend URL. |
-| `auth` | object | Backend credentials. |
+| `auth` | object | Backend credentials. For OpenSearch the typical shape is `{ "bearer": "..." }` for a managed service or `{ "basic": { "username": "...", "password": "..." } }` for self-hosted clusters; augchatd passes the object through to the OpenSearch client. |
 | `indexes` | string[] | OpenSearch indexes this connector is scoped to. |
 
 ### Validation rules

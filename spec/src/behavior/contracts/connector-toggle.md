@@ -47,7 +47,7 @@ The end user can only **narrow** the resolved scope by turning connectors off. T
 - Toggling does not abort in-flight tool calls already issued in the current turn.
 - Toggling does not modify the connector's configuration (credentials, URL, indexes). Only the `active` flag changes.
 - The end user cannot **add** a connector via toggling. The connector list is fixed at session creation; only state changes.
-- augchatd does not persist per-user "preferred" active states across sessions; defaults come from each session's payload.
+- augchatd does not persist per-user "preferred" active states across sessions. **Every new session_id starts with active states equal to each connector's `default_active`**, regardless of how the previous session ended (JWT expiry, idle disconnect, forced delete, browser refresh). If preserving end-user preferences across re-mints matters, the bundled UI is the place to cache them client-side and re-apply via `PUT /connectors/:descriptive_id` after each session start.
 
 ## Tests this contract implies
 

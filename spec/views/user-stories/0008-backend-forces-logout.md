@@ -52,3 +52,5 @@ Given the session_id we hold is stale (already expired or never existed)
 ## Why this matters
 
 JWT validation is signature-only, so by default a revoked session keeps working until its TTL elapses. For policy events that must take effect immediately (suspension, sign-out, forced refresh after credential rotation), the integrator needs a synchronous lever. `DELETE /sessions/:id` is that lever, and it cooperates with cold storage so the conversation survives even when the session does not.
+
+Note: deleting a session also drops its connector registry (the resolved scope and the active flags). A subsequent re-mint produces a new `session_id` with active states reset to each connector's `default_active`; any end-user toggle preferences from the prior session do not carry over (see [contract-connector-toggle](../../src/behavior/contracts/connector-toggle.md)).

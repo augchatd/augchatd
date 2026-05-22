@@ -9,7 +9,7 @@ evidence:
 
 # Bounded contexts
 
-augchatd is small. Five contexts cover everything in the README.
+augchatd is small. Four top-level contexts cover everything in the README; the third splits into two type-specific sub-contexts.
 
 ## 1. Session lifecycle
 
@@ -24,7 +24,7 @@ Does **not** decide policy (which user, which MCPs, which indexes) — the integ
 
 ## 2. Chat (tool-use loop)
 
-Owns: turning an end-user message into a streamed reply, looping the LLM with any provisioned MCP tools and optional RAG retrieval.
+Owns: turning an end-user message into a streamed reply, looping the LLM with the session's active connectors (MCP tools, RAG retrieval, …).
 
 Boundaries:
 - Receives chat messages over the browser-facing JWT API.
@@ -57,7 +57,7 @@ Boundaries:
 - Scope applied *before* query construction, not as a post-filter.
 - augchatd does not ingest, chunk, or embed; the backend must already be populated.
 
-## 5. Storage (hot + cold)
+## 4. Storage (hot + cold)
 
 Owns: keeping conversation state hot in embedded SQLite while a session is live, flushing to the integrator's S3 bucket on disconnect or 5-minute idle, hydrating from S3 on resume.
 
