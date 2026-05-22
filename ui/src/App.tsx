@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionBarPrimitive,
   AssistantRuntimeProvider,
+  BranchPickerPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
@@ -10,11 +12,18 @@ import {
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
 import { MarkdownText } from "./Markdown.tsx";
+import { CitationsPanel } from "./blocks/CitationsPanel.tsx";
 
 interface HealthState {
   mode: "demo" | "prod";
   status: string;
 }
+
+const SUGGESTIONS = [
+  "Show me a Mermaid flowchart for an HTTP request.",
+  "Render a small JSON object for a user record.",
+  "Explain Euler's identity with LaTeX.",
+];
 
 /**
  * augchatd bundled UI.
@@ -28,7 +37,7 @@ interface HealthState {
  *    Bearer token; on 401 the JWT is re-fetched once (per
  *    contract-jwt-refresh, single recovery path).
  *
- * Production handshake (postMessage from the integrator's parent page,
+ * Production handshake (postMessage from the integrator parent page,
  * per contract-ui-handshake) is not wired yet — that comes when prod
  * POST /sessions lands.
  */
@@ -109,9 +118,6 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
         fetch: async (input, init) => {
           const r = await fetch(input, init);
           if (r.status !== 401) return r;
-          // Per contract-jwt-refresh: single recovery path. In demo
-          // mode the iframe parent (the integrator) is augchatd
-          // itself, so we just re-GET /demo/jwt.
           try {
             jwtRef.current = await fetchDemoJwt();
           } catch {
@@ -139,6 +145,7 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
               components={{ UserMessage, AssistantMessage }}
             />
           </div>
+          <CitationsPanel />
         </ThreadPrimitive.Viewport>
         <Composer />
       </ThreadPrimitive.Root>
@@ -148,10 +155,23 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-border bg-bg-soft p-6 text-fg-muted">
+    <div className="rounded-lg border border-border bg-bg-soft p-6">
       <div className="mb-1 text-fg-base">Try a question.</div>
-      <div className="text-[13px]">
+      <div className="mb-4 text-[13px] text-fg-muted">
         The session uses the model and key bound at boot from env vars.
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {SUGGESTIONS.map((text) => (
+          <ThreadPrimitive.Suggestion
+            key={text}
+            prompt={text}
+            method="replace"
+            autoSend
+            className="rounded-full border border-border bg-bg-mid px-3 py-1 text-[13px] text-fg-base hover:bg-bg-base"
+          >
+            {text}
+          </ThreadPrimitive.Suggestion>
+        ))}
       </div>
     </div>
   );
@@ -164,7 +184,7 @@ function UserMessage() {
         You
       </div>
       <div className="rounded-2xl rounded-tr-md border border-border bg-bg-mid px-4 py-2.5 max-w-[85%] whitespace-pre-wrap">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Image: ImagePart }} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -177,9 +197,99 @@ function AssistantMessage() {
         Assistant
       </div>
       <div className="rounded-2xl rounded-tl-md border border-border bg-bg-soft px-4 py-3 max-w-[95%]">
-        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Parts
+          components={{
+            Text: MarkdownText,
+            Image: ImagePart,
+            Reasoning: ReasoningPart,
+          }}
+        />
+      </div>
+      <div className="mt-1 flex items-center gap-1 text-fg-muted">
+        <AssistantActionBar />
+        <BranchPicker />
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function ReasoningPart({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <details className="my-2 rounded-lg border border-border bg-bg-base p-2 text-fg-muted">
+      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider">
+        Reasoning
+      </summary>
+      <div className="mt-2 whitespace-pre-wrap font-mono text-[0.85em] leading-relaxed">
+        {text}
+      </div>
+    </details>
+  );
+}
+
+function ImagePart({ image }: { image?: string }) {
+  if (!image) return null;
+  return <img src={image} alt="" className="my-3 max-h-96 max-w-full rounded-lg" />;
+}
+
+function AssistantActionBar() {
+  return (
+    <ActionBarPrimitive.Root
+      hideWhenRunning
+      autohide="not-last"
+      className="flex items-center gap-0.5"
+    >
+      <ActionBarPrimitive.Copy asChild>
+        <button
+          type="button"
+          aria-label="Copy"
+          className="rounded px-2 py-0.5 text-xs hover:bg-bg-mid hover:text-fg-base"
+        >
+          <MessagePrimitive.If copied>Copied</MessagePrimitive.If>
+          <MessagePrimitive.If copied={false}>Copy</MessagePrimitive.If>
+        </button>
+      </ActionBarPrimitive.Copy>
+      <ActionBarPrimitive.Reload asChild>
+        <button
+          type="button"
+          aria-label="Regenerate"
+          className="rounded px-2 py-0.5 text-xs hover:bg-bg-mid hover:text-fg-base"
+        >
+          Regenerate
+        </button>
+      </ActionBarPrimitive.Reload>
+    </ActionBarPrimitive.Root>
+  );
+}
+
+function BranchPicker() {
+  return (
+    <BranchPickerPrimitive.Root
+      hideWhenSingleBranch
+      className="flex items-center gap-1 text-xs"
+    >
+      <BranchPickerPrimitive.Previous asChild>
+        <button
+          type="button"
+          aria-label="Previous branch"
+          className="rounded px-1.5 py-0.5 hover:bg-bg-mid hover:text-fg-base"
+        >
+          ←
+        </button>
+      </BranchPickerPrimitive.Previous>
+      <span className="tabular-nums">
+        <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
+      </span>
+      <BranchPickerPrimitive.Next asChild>
+        <button
+          type="button"
+          aria-label="Next branch"
+          className="rounded px-1.5 py-0.5 hover:bg-bg-mid hover:text-fg-base"
+        >
+          →
+        </button>
+      </BranchPickerPrimitive.Next>
+    </BranchPickerPrimitive.Root>
   );
 }
 
