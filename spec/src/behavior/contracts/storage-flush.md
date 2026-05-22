@@ -24,6 +24,15 @@ A conversation is flushed from hot SQLite to the integrator's S3-compatible buck
 - **Session disconnect**
 - **5 minutes of inactivity**
 
+What flushes with the conversation:
+
+- All messages, in order.
+- The conversation's **per-connector active state** (see [contract-connector-toggle](connector-toggle.md), [adr-0010](../../architecture/adrs/0010-unified-connector-model.md)) — the user's per-conversation toggle preferences survive cold-storage round-trips, so resuming the conversation in a later session restores them.
+
+What does **not** flush:
+
+- The session's resolved-scope connector list (URLs, auth, indexes) — that belongs to the session, not the conversation, and is gone when the session ends.
+
 Durability rules:
 
 - augchatd tests S3 at session creation; setup **fails** if it can't write (see [session-create](session-create.md)).
@@ -38,7 +47,8 @@ Durability rules:
 - A simulated S3 outage after disconnect leaves the hot row in place; the session is reported as still flushing.
 - A sustained S3 outage past the stalled-flush threshold transitions the session to read-only: `POST /chat` returns `503` (`X-Augchatd-Reason: flush-stalled`), `GET /conversations*` still works.
 - On the first successful flush after a read-only transition, the next `POST /chat` succeeds without any client-side reconfiguration.
-- On resume after a successful flush + cache eviction, the conversation is loaded from S3 transparently.
+- On resume after a successful flush + cache eviction, the conversation is loaded from S3 transparently — both messages **and** the per-connector active state.
+- A conversation that had `rag_internal: false` saved when it flushed is hydrated with `rag_internal: false`; the user does not have to retoggle after a session re-mint that hydrates from cold.
 - 5 minutes of inactivity on a live session triggers a flush; subsequent activity hydrates if hot was already released.
 
 ## Non-promises
@@ -54,4 +64,4 @@ Durability rules:
 - S3 mock returns failure → hot DB row remains; retry recorded; session not lost.
 - S3 mock keeps failing past the stalled-flush threshold → next `POST /chat` returns 503 with `X-Augchatd-Reason: flush-stalled`; `GET /conversations*` still returns 200.
 - After the simulated outage, the mocked S3 starts accepting writes → next flush succeeds → next `POST /chat` works without client-side intervention.
-- Hot eviction + resume → hydration from S3 visible in retrieved messages.
+- Hot eviction + resume → hydration from S3 visible in retrieved messages **and** in the per-connector active state returned by `GET /conversations/:cid/connectors`.

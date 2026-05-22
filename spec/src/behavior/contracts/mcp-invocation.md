@@ -33,7 +33,7 @@ When the LLM in a chat turn emits a tool call that resolves to one of the sessio
 4. Treats a 401 as a connector-credential-expiry event ([jwt-refresh](jwt-refresh.md) path).
 5. Feeds the result back into the LLM loop.
 
-**Inactive** MCP-type connectors are **not exposed** to the LLM at the start of the turn — the LLM cannot emit a tool call resolving to them.
+MCP-type connectors **inactive for the current conversation** are **not exposed** to the LLM at the start of the turn — the LLM cannot emit a tool call resolving to them. Active state is per-conversation (see [contract-connector-toggle](connector-toggle.md)); the same MCP connector can be active in one conversation and inactive in another.
 
 The browser sees the *tool was called* with the connector's `descriptive_id` / `name` and a sanitized result. It does not see the URL or the auth.
 

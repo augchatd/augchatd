@@ -92,7 +92,7 @@ Active state is persisted **alongside the conversation it belongs to** — in th
 ## Consequences
 
 - One server-side dispatcher with a `type` switch; new connector types extend the enum without reshaping the payload.
-- The bundled UI gains a connector panel: each entry shows `name`, `type`, and a toggle bound to the active state. Credentials are never sent to the browser; the listing carries only `descriptive_id`, `name`, `type`, `active`.
+- The bundled UI gains a connector panel: each entry shows `name`, `type`, and a toggle bound to the active state. Credentials are never sent to the browser. There are two listing endpoints with different shapes: `GET /connectors` returns the session resolved scope `[{descriptive_id, name, type}]` (no `active` field); `GET /conversations/:cid/connectors` returns `[{descriptive_id, name, type, active}]` with the conversation's per-connector active state.
 - The `model` (LLM) is **not** a connector — it is the chat engine itself, configured once per session.
 - Existing language in the spec moves from "MCP server" / "RAG backend" to "connector of type X" where the unified vocabulary helps; the lower-level contracts (`mcp-invocation`, `rag-query`) continue to describe the per-type mechanics.
 

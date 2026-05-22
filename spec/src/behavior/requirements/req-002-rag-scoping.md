@@ -34,7 +34,7 @@ A scope-as-post-filter design is one MCP-driven typo or prompt-injected query aw
 
 ## Acceptance
 
-Implementation must show a captured query (server log or trace) for each test session that contains only the active connector's allowed indexes. Negative tests:
+Implementation must show a captured query (server log or trace) for each test (session, conversation) pair that contains only the conversation's active connector's allowed indexes. Negative tests:
 
 - LLM tool call mentioning an index not in any active connector's `indexes[]` → query refused or restricted to the active set; the disallowed index name never appears in the outbound query.
 - Connector toggled off then chat → no query for that connector observed.

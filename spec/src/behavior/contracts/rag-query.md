@@ -32,7 +32,7 @@ When a session has one or more **active RAG-type connectors** and the LLM invoke
 3. Authenticates with that connector's `auth` credentials against the connector's `cluster`.
 4. Returns hits to the LLM, tagged with the connector's `descriptive_id` so the LLM (and the streamed indicator) know which knowledge base they came from.
 
-Scope is applied **before** query construction. The LLM cannot express a query that escapes the connector's `indexes[]`; the tool surface only exposes that set. **Inactive** RAG-type connectors are not exposed to the LLM at the start of the turn.
+Scope is applied **before** query construction. The LLM cannot express a query that escapes the connector's `indexes[]`; the tool surface only exposes that set. RAG-type connectors **inactive for the current conversation** are not exposed to the LLM at the start of the turn (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)).
 
 ## Observable outcomes
 

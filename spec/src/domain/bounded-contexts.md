@@ -24,7 +24,7 @@ Does **not** decide policy (which user, which MCPs, which indexes) — the integ
 
 ## 2. Chat (tool-use loop)
 
-Owns: turning an end-user message into a streamed reply, looping the LLM with the session's active connectors (MCP tools, RAG retrieval, …).
+Owns: turning an end-user message into a streamed reply, looping the LLM with the **conversation's** active connectors (MCP tools, RAG retrieval, …). Active state is per-conversation; the same connector can be active in one conversation and inactive in another.
 
 Boundaries:
 - Receives chat messages over the browser-facing JWT API.
