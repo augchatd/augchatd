@@ -63,7 +63,7 @@ Owns: keeping conversation state hot in embedded SQLite while a session is live,
 
 Boundaries:
 - One SQLite database per `(mTLS tenant, user)`, laid out as `data/<tenantId>/<userId>.sqlite`.
-- Hot data is not dropped until cold has it (flush retried indefinitely on failure).
+- Hot data is not dropped until cold has it. Flush retries with exponential backoff; after a stalled-flush threshold (default 15 min) the session enters read-only mode until a flush succeeds — see [storage-durability](../constraints/storage-durability.md).
 - Setup fails fast if S3 cannot be written at session creation.
 
 ## What is *not* a bounded context here

@@ -25,7 +25,7 @@ links:
 
 ## Promise
 
-When a session has one or more **active RAG-type connectors** and the LLM invokes the retrieval tool exposed by one of them during a chat turn, augchatd:
+When a conversation has one or more **active RAG-type connectors** (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)) and the LLM invokes the retrieval tool exposed by one of them during a chat turn, augchatd:
 
 1. Resolves the backend kind from the connector's `backend` field — currently always `"opensearch"` (hybrid BM25 + kNN, native). pgvector is a future option (see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)).
 2. Builds a query constrained to **that connector's `indexes[]`**.

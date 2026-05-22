@@ -25,7 +25,7 @@ links:
 
 ## Promise
 
-When the LLM in a chat turn emits a tool call that resolves to one of the session's **active MCP-type connectors**, augchatd:
+When the LLM in a chat turn emits a tool call that resolves to one of the **conversation's active MCP-type connectors** (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)), augchatd:
 
 1. Looks up that connector's `url` and `auth` from the session's connector registry (in-memory).
 2. Makes the call over **HTTP or SSE** (no stdio).

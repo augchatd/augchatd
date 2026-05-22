@@ -15,7 +15,7 @@ links:
 
 ## Statement
 
-When a session has one or more **active RAG-type connectors**, every retrieval request augchatd executes is constrained to that connector's declared `indexes[]`. Currently the only supported `backend` is `"opensearch"` (pgvector is a future option — see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)). The scope applies *before* the query reaches the backend — not as a post-filter on results.
+When a conversation has one or more **active RAG-type connectors** (active state is per-conversation; see [contract-connector-toggle](../contracts/connector-toggle.md)), every retrieval request augchatd executes is constrained to that connector's declared `indexes[]`. Currently the only supported `backend` is `"opensearch"` (pgvector is a future option — see [pressure-pgvector-backend](../../pressure/pgvector-backend.md)). The scope applies *before* the query reaches the backend — not as a post-filter on results.
 
 The LLM is given a tool surface that only exposes the indexes from active connectors; it cannot construct a query that escapes them. **Inactive** RAG-type connectors are not exposed to the LLM at all.
 

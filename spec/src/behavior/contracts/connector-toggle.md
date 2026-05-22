@@ -26,7 +26,7 @@ For each conversation in a live session, the browser can:
 1. **List a conversation's connectors with their active state** via `GET /conversations/:conversation_id/connectors`.
 2. **Toggle** an individual connector's active state **for that conversation** via `PUT /conversations/:conversation_id/connectors/:descriptive_id { active: bool }`.
 
-Both responses are free of credentials, URLs, and auth.
+The `GET` response carries only `descriptive_id`, `name`, `type`, `active` — never credentials, URLs, or auth. The `PUT` response is `204 No Content` (the boolean was just sent by the caller; a `204` confirms it landed).
 
 Active state is **persisted as part of the conversation**:
 
