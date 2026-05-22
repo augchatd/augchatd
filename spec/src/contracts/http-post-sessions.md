@@ -5,6 +5,8 @@ status: proposed
 evidence:
   - source: README.md@e562b2b
     section: "README header (curl example) / How it works (step 1)"
+  - source: README.md
+    section: "README header (ttl_seconds note)"
 links:
   - relation: supports
     target: contract-session-create
@@ -14,7 +16,7 @@ links:
 
 ## Auth
 
-**mTLS.** Client certificate is required and identifies the mTLS tenant for storage partitioning.
+**mTLS.** Client certificate is required and identifies the mTLS tenant — used to partition **hot** storage. Cold storage is specified per session via `storage.s3` and is not partitioned by the mTLS tenant.
 
 ## Request
 
@@ -25,7 +27,8 @@ links:
 
 ```json
 {
-  "user_id": "user_42",
+  "user_id":     "user_42",
+  "ttl_seconds": 60,
   "system_prompt": "You are a helpful assistant.",
   "model": {
     "provider": "anthropic",
@@ -55,6 +58,7 @@ links:
 
 ### Optional fields
 
+- `ttl_seconds` — JWT lifetime in seconds. **Default `60`**, deliberately low so development exercises the refresh path frequently. Production typically uses ~`1800` (30 min) to amortize refresh latency. The returned `expires_at` reflects the chosen TTL.
 - `mcp_servers[]` — each entry `{ url, auth }`. Independently optional.
 - `tools.rag` — `{ backend: "opensearch" | "pgvector", cluster, indexes }` (OpenSearch shape; pgvector shape **not yet specified in evidence — see assumption below**). Independently optional.
 

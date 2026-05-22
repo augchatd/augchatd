@@ -10,7 +10,8 @@ curl -X POST https://augchatd.your-infra/sessions \
   --cert prod-client.pem --key prod-client.key \
   -H 'Content-Type: application/json' \
   -d '{
-    "user_id": "user_42",
+    "user_id":     "user_42",
+    "ttl_seconds": 60,
     "system_prompt": "You are a helpful assistant.",
     "model":       { "provider": "anthropic", "model_id": "claude-opus-4-7", "api_key": "sk-ant-..." },
     "mcp_servers": [ { "url": "https://your-mcp/",    "auth": { "bearer": "..." } } ],
@@ -37,9 +38,13 @@ curl -X POST https://augchatd.your-infra/sessions \
 </script>
 ```
 
+`ttl_seconds` is the JWT lifetime (optional, default `60`). The low default is deliberate for development — it forces frequent refresh through your backend so the refresh path stays exercised. In production, raise it (e.g. `1800` for 30 min) to amortize refresh latency.
+
 `tools.rag.backend` can be `"opensearch"` (hybrid BM25 + kNN, native) or `"pgvector"` (vector-only out of the box; combine with your own `tsvector` index if you want lexical). `mcp_servers` and `tools.rag` are independently optional — minimal session is just `model + storage`.
 
 The browser never sees the LLM key, the MCP credentials, the RAG cluster, or the storage credentials. Only your server-issued JWT, valid for minutes. The chat UI is bundled in the augchatd binary and served on the same origin as the API — built on [assistant-ui](https://github.com/assistant-ui/assistant-ui), shipped with the daemon, no separate UI to host.
+
+A **session** is the short-lived authenticated context a `POST /sessions` call mints — its lifetime equals the JWT TTL. A **conversation** is the persistent chat history identified by `conversation_id` and can span any number of sessions: when a JWT expires mid-chat, the next session resumes the same conversation from storage. Your backend mints sessions; the browser creates and chooses conversations directly against augchatd.
 
 ## The problem augchatd solves
 
@@ -76,7 +81,9 @@ open http://localhost:8080
 
 Add `DEMO_MCP_SERVERS` and `DEMO_RAG_*` env vars to enable tools and retrieval. The browser loads the bundled UI from the same port, fetches a session JWT from `GET /demo/jwt`, then chats normally.
 
-Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, and holds credentials in the process environment. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, and holds credentials in the process environment — and the bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+
+augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "mode": "demo" | "prod", "status": "ok" }`. The `mode` field is the safety net for accidental demo deploys — fail your deploy if a production health check reports `"mode": "demo"`.
 
 ## How it works
 
@@ -123,13 +130,14 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - JWT validation is signature-only — no DB lookup per message, so streaming doesn't pay validation cost per token.
 - If a JWT expires mid-conversation, the next message returns 401; the embedded UI requests a new JWT from your backend and resumes — the conversation state survives in storage (hot DB and your S3), not in the token.
 - **The same flow handles MCP credential expiry**: if an upstream MCP returns 401 (e.g. the user's OAuth token expired), augchatd surfaces it as a 401 to the UI, which triggers the same refresh path. Your backend re-mints the session with currently-valid credentials from your token vault; augchatd holds no refresh logic of its own. One mechanism for both kinds of expiry, your backend remains the single source of truth.
+- **Forced logout**: your backend can call `DELETE /sessions/:id` (mTLS) at any time to invalidate a live session. augchatd flushes any unflushed conversation state to cold first, then drops the in-memory session — subsequent chat requests bearing that JWT return 401, same as expiry.
 
 ### Storage
 
-- **Hot**: internal SQLite database managed by augchatd (using Bun's embedded SQLite — no external DB to operate). One database per mTLS tenant identifier, created when the first session for that tenant connects, destroyed only after a successful flush to cold.
+- **Hot**: internal SQLite database managed by augchatd (using Bun's embedded SQLite — no external DB to operate). One database per `(tenant, user)`, laid out as `data/<tenantId>/<userId>.sqlite`. The file is created on the first session for that user and lives while **any** session for that user is alive; it is removed only after all of the user's sessions have ended and conversations have flushed. The per-user partition avoids write contention between concurrent end users of the same tenant.
 - **Cold**: your S3-compatible bucket, passed in per session in the setup payload.
-- **Flush triggers**: session disconnect, or 5 minutes of inactivity. On session resume, history is hydrated from S3 if no longer hot.
-- **Durability**: augchatd tests S3 at session creation (setup fails if it can't write). If a later flush fails, the session keeps running and augchatd retries until persistence succeeds — hot data is not dropped until cold has it.
+- **Flush triggers**: session disconnect, or 5 minutes of inactivity. On resume (a new session loading an existing conversation), history is hydrated from S3 if no longer hot.
+- **Durability**: augchatd tests S3 at session creation (setup fails if it can't write). Flush failures retry with exponential backoff; if no flush succeeds within ~15 minutes the affected session enters **read-only mode** — `POST /chat` returns `503` with `X-Augchatd-Reason: flush-stalled`, while `GET /conversations*` keeps working. The session auto-recovers on the first successful flush. Hot data is never dropped until cold has it.
 
 ## Stop / Start
 
@@ -149,10 +157,10 @@ Demo mode is for local testing and public demos only. It bypasses mTLS, runs sin
 - **Provisions per-user credentials and scope from your existing auth, at session creation.** Each session carries its own LLM key, MCP servers with the user's own OAuth tokens, and the exact RAG indexes that user is allowed to see. augchatd enforces all of this server-side for every message and tool call. Credentials live in memory for the session's lifetime — never persisted in plaintext logs, never sent to clients.
 - Runs the **tool-use loop** server-side, combining MCP tools (when provisioned), optional RAG retrieval, and the LLM response — using only the session's provisioned credentials and scope.
 - Runs **retrieval** against the session's RAG backend, when enabled: hybrid (BM25 + kNN) against your OpenSearch cluster, or vector against your pgvector store. Scoped to the indexes/tables the session allows.
-- **Tier-stores conversation history**: hot in an internal DB managed by augchatd (one DB per mTLS tenant, ephemeral), cold in your S3-compatible bucket (passed in per session). See [Storage](#storage) above for lifecycle and durability semantics.
+- **Tier-stores conversation history**: hot in internal SQLite databases managed by augchatd (one DB per `(tenant, user)`, ephemeral), cold in your S3-compatible bucket (passed in per session). See [Storage](#storage) above for lifecycle and durability semantics.
 - Ships a **bundled chat UI** (built on [assistant-ui](https://github.com/assistant-ui/assistant-ui)) served on the same origin as the API. You embed it as an `<iframe>` — no separate UI to host, no asset pipeline on your side.
 - Exposes a **minimal browser API** (consumed by the bundled UI): list/create/delete conversations, send messages. Streaming follows the assistant-ui native protocol (Vercel AI SDK data stream).
-- **Isolates tenants** logically within a single process: mTLS at setup, JWT at chat time, per-session credentials in memory, per-tenant storage by configuration. For mutually hostile tenants, deploy one augchatd process per tenant.
+- **Isolates tenants** logically within a single process: mTLS at setup, JWT at chat time, per-session credentials in memory, per-(tenant, user) hot storage on disk. For mutually hostile tenants — or for any tenant whose load exceeds what one process can comfortably serve — deploy one augchatd process per tenant. Horizontal scaling within a single tenant requires sticky-by-`session_id` routing across processes; stateless load-balancing is not supported today (the session registry lives in process memory).
 
 ## What augchatd does NOT do
 
@@ -190,7 +198,7 @@ augchatd is opinionated about staying small. Your software already knows which O
 
 Early. OSS, currently maintained by a single author. The API and storage layout may change before `1.0`. The `augchatd/augchatd` Docker image referenced in Quickstart is **planned but not yet published**.
 
-Built with Bun, Hono, and TypeScript. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). Hot conversation storage uses Bun's embedded SQLite, one database per mTLS tenant — no external DB or cache required for the daemon to run. When RAG is enabled, retrieval runs against OpenSearch (hybrid BM25 + kNN, native) or pgvector (vector-only out of the box; BYO `tsvector` for lexical).
+Built with Bun, Hono, and TypeScript on the backend; the bundled UI is a React SPA built with Vite, embedding [assistant-ui](https://github.com/assistant-ui/assistant-ui), compiled into the binary as static assets. LLM access goes through the Vercel AI SDK (provider-agnostic: Anthropic, OpenAI, and others). Hot conversation storage uses Bun's embedded SQLite, one database per `(tenant, user)` — no external DB or cache required for the daemon to run. When RAG is enabled, retrieval runs against OpenSearch (hybrid BM25 + kNN, native) or pgvector (vector-only out of the box; BYO `tsvector` for lexical).
 
 ## License
 

@@ -14,8 +14,9 @@ augchatd is a **single binary** that contains everything below.
 ```
 augchatd process
 ├── HTTP API layer (Hono)
-│   ├── mTLS endpoint: POST /sessions
+│   ├── mTLS endpoints: POST /sessions, DELETE /sessions/:id
 │   ├── demo endpoint (mode=demo only): GET /demo/jwt
+│   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
 │   ├── JWT endpoints: chat, conversation CRUD (browser API)
 │   └── static UI serving (same origin, /)
 │
@@ -28,12 +29,13 @@ augchatd process
 │   └── RAG client (OpenSearch hybrid | pgvector vector)
 │
 ├── Hot storage
-│   └── Bun embedded SQLite, one DB per mTLS tenant
+│   └── Bun embedded SQLite, one DB per (mTLS tenant, user)
+│        layout: data/<tenantId>/<userId>.sqlite
 │
 ├── Cold storage driver
 │   └── S3-compatible client (per-session bucket + creds)
 │
-└── Bundled UI (compiled into the binary)
+└── Bundled UI (React + Vite static SPA, compiled into the binary)
     └── assistant-ui, served on /
 ```
 
@@ -54,15 +56,16 @@ augchatd has **no required external dependencies** to start: no separate databas
 
 ## Stack
 
-Built with **Bun**, **Hono**, **TypeScript**. LLM access via **Vercel AI SDK**. Hot storage via Bun's embedded **SQLite**. Bundled UI built on **assistant-ui**.
+Built with **Bun**, **Hono**, **TypeScript** on the backend. Bundled UI is a **React SPA built with Vite**, embedding **assistant-ui**, compiled into the binary as static assets. LLM access via **Vercel AI SDK**. Hot storage via Bun's embedded **SQLite**, one DB per (mTLS tenant, user).
 
 See ADRs:
 
 - [0001 — Single binary + bundled UI](adrs/0001-single-binary-bundled-ui.md)
-- [0002 — Embedded SQLite per mTLS tenant](adrs/0002-embedded-sqlite-per-mtls-tenant.md)
+- [0002 — Embedded SQLite per (mTLS tenant, user)](adrs/0002-embedded-sqlite-per-mtls-tenant.md)
 - [0003 — Customer-provided cold storage (S3)](adrs/0003-customer-provided-cold-storage.md)
 - [0004 — HTTP/SSE-only MCP transport](adrs/0004-http-sse-mcp-only.md)
 - [0005 — JWT signature-only validation](adrs/0005-jwt-signature-only.md)
 - [0006 — Vercel AI SDK for LLM access](adrs/0006-vercel-ai-sdk-for-llm.md)
 - [0007 — Bun + Hono + TypeScript stack](adrs/0007-bun-hono-typescript.md)
 - [0008 — Demo mode shares the production binary](adrs/0008-demo-mode-shares-binary.md)
+- [0009 — React + Vite bundled UI](adrs/0009-react-vite-bundled-ui.md)

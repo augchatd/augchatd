@@ -28,6 +28,7 @@ Given I have docker installed
           augchatd/augchatd
   And I open http://localhost:8080
  Then the bundled UI loads
+  And the UI shows a visible "Demo session — not authenticated" banner
   And it fetches a JWT from GET /demo/jwt
   And I can chat with the configured model
 ```
@@ -40,6 +41,7 @@ Given I have a working demo
  Then the same binary serves my production chat
   And the chat code path is identical
   And GET /demo/jwt is no longer exposed
+  And GET /healthz reports "mode": "prod" (which my deploy gate can assert)
 ```
 
 ## Why this matters

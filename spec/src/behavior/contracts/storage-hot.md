@@ -6,6 +6,8 @@ capability: cap-storage
 evidence:
   - source: README.md@e562b2b
     section: "Storage / Status (Bun embedded SQLite)"
+  - source: README.md
+    section: "Storage (per-user layout)"
 links:
   - relation: satisfies
     target: req-004-tier-stored-history
@@ -15,30 +17,40 @@ links:
     target: contract-storage-flush
 ---
 
-# Contract — Hot storage (embedded SQLite per mTLS tenant)
+# Contract — Hot storage (embedded SQLite, one DB per (tenant, user))
 
 ## Promise
 
-While a session is live, its conversation state lives in an **internal SQLite database** managed by augchatd, using Bun's embedded SQLite.
+While any session for a given (tenant, user) is live, that user's conversation state lives in an **internal SQLite database** managed by augchatd, using Bun's embedded SQLite.
 
-- One database per **mTLS tenant identifier**.
-- The database is created when the first session for that tenant connects.
-- It is destroyed only after a *successful flush to cold* (see [storage-flush](storage-flush.md)).
+- Layout on disk: `data/<tenantId>/<userId>.sqlite` — one file per `(tenantId, userId)` pair.
+- The file is created when the first session for that user (under that tenant) connects.
+- **Lifecycle (hard rule):** the file lives while **any** session for `(tenantId, userId)` is alive. It is closed and deleted only after **all** sessions for that user have ended **and** the user's conversations have been flushed to cold (see [storage-flush](storage-flush.md)).
+- A tenant folder with no remaining user files is removed.
+
+This partitioning eliminates write contention between concurrent end users of the same tenant — each user has their own SQLite writer lock.
 
 ## Observable outcomes
 
 - A live chat turn reads and writes through the hot DB.
-- Two mTLS tenants run with two distinct SQLite databases (separate files/connections).
+- Two end users of the same tenant chatting concurrently write to two distinct SQLite files; neither blocks the other on a writer lock.
+- Two mTLS tenants run under two distinct subdirectories (`data/<A>/...` vs `data/<B>/...`) with no shared files.
+- A second session for the same `(tenant, user)` while the first is still alive **reuses** the existing file — it is not recreated.
+- A session ending while another for the same user remains alive does **not** remove the file.
 - Process restart preserves the hot DB (it is on disk, not memory-only).
 
 ## Non-promises
 
-- augchatd does not expose the SQLite file to integrators; it is internal.
-- augchatd does not encrypt the SQLite file at rest. (Disk encryption is the operator's concern.)
+- augchatd does not expose the SQLite files to integrators; they are internal.
+- augchatd does not encrypt SQLite files at rest. (Disk encryption is the operator's concern.)
 - augchatd does not run an external database; no Postgres/MySQL/Redis dependency.
+- augchatd does not guarantee a maximum number of open file handles — operators size `ulimit -n` per their concurrency profile.
 
 ## Tests this contract implies
 
 - A live read returns previously-written messages of the same session.
-- A second mTLS tenant's chat does not appear in the first tenant's DB.
-- After a forced flush + idle, the hot DB row for the flushed conversation is gone (cleaned up post-success).
+- A second end user (same tenant) writing concurrently does not block the first.
+- A second mTLS tenant's chat does not appear in the first tenant's subdirectory.
+- A user with two concurrent sessions: ending one session leaves the file in place; ending both (after flush) removes the file.
+- After a forced flush + idle, the hot row for the flushed conversation is gone (cleaned up post-success) but the file persists as long as any session for that user lives.
+- A tenant subdirectory becomes empty (no user files) and is removed.

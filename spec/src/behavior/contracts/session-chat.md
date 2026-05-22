@@ -42,6 +42,7 @@ Throughout, only the session's provisioned credentials and scope are used.
 - A streamed reply reaches the browser with no LLM key, MCP credential, or RAG cluster URL exposed.
 - Tool-call indicators in the stream are sanitized — they show *what was called* but not credentials or internal URLs.
 - A second concurrent session's call to the same MCP URL carries that session's credentials, not the first's.
+- When the session is in **read-only mode** because its cold-storage flush has stalled past threshold (see [storage-flush](storage-flush.md) / [storage-durability](../../constraints/storage-durability.md)), `POST /chat` returns `503 Service Unavailable` with `X-Augchatd-Reason: flush-stalled` — `GET /conversations*` continues to serve reads. **The bundled UI surfaces this state with a visible "Service temporarily read-only — your messages are preserved" banner and disables the chat input** until recovery. The session auto-recovers on the next successful flush; the banner disappears automatically.
 
 ## Non-promises
 

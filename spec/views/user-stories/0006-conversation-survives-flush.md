@@ -32,11 +32,25 @@ Given user_42's session has been idle for 5 minutes
 Given a flush is attempted
  When S3 returns an error
  Then augchatd retains the hot copy
-  And retries the flush
+  And retries the flush with exponential backoff
   And the session continues serving messages
   And nothing is dropped until the retry succeeds
 ```
 
+## Scenario — sustained S3 outage triggers read-only mode
+
+```
+Given the bucket has been unreachable past the stalled-flush threshold (default ~15 minutes)
+ When the end user tries to send a chat message
+ Then POST /chat returns 503 with header X-Augchatd-Reason: flush-stalled
+  And GET /conversations and GET /conversations/:id keep working (reads are unaffected)
+  And the hot copy remains intact (nothing is dropped)
+ When the bucket recovers
+  And the next background flush attempt succeeds
+ Then the session auto-recovers (no client-side reconfiguration)
+  And the next POST /chat is accepted normally
+```
+
 ## Why this matters
 
-This is the "you do not need to operate a database" promise. Hot SQLite is internal; cold S3 is the integrator's; augchatd glues them with a durability rule (hot is not dropped until cold has it).
+This is the "you do not need to operate a database" promise. Hot SQLite is internal; cold S3 is the integrator's; augchatd glues them with a durability rule (hot is not dropped until cold has it). The read-only fallback bounds the retry behavior — instead of retrying forever silently, the system surfaces the stall to the operator and the user, while still preserving data.

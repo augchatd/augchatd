@@ -29,6 +29,8 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 
 - `docker run -p 8080:8080 -e AUGCHATD_MODE=demo ...` starts a working chat at `http://localhost:8080`.
 - `GET /demo/jwt` returns a JWT only in demo mode; in production mode the endpoint is absent or returns 404.
+- `GET /healthz` returns `"mode": "demo"` (see [http-get-healthz](../../contracts/http-get-healthz.md)) — operators rely on this to fail accidental production deploys.
+- The bundled UI displays a visible **"Demo session — not authenticated"** banner on every page. The banner is rendered from inside the augchatd origin (iframe content); an integrator's parent page cannot style or hide it, by browser same-origin policy.
 - The chat works without any mTLS client cert.
 
 ## Non-promises

@@ -53,7 +53,7 @@ Boundaries:
 Owns: keeping conversation state hot in embedded SQLite while a session is live, flushing to the integrator's S3 bucket on disconnect or 5-minute idle, hydrating from S3 on resume.
 
 Boundaries:
-- One SQLite database per mTLS tenant.
+- One SQLite database per `(mTLS tenant, user)`, laid out as `data/<tenantId>/<userId>.sqlite`.
 - Hot data is not dropped until cold has it (flush retried indefinitely on failure).
 - Setup fails fast if S3 cannot be written at session creation.
 

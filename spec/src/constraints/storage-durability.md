@@ -25,7 +25,18 @@ links:
 
 ## Retry policy
 
-Failed flushes **retry indefinitely** while the session keeps running. The integrator's monitoring (logs to stderr) is the surface that reveals flush trouble; augchatd does not give up.
+Failed flushes retry with **exponential backoff** (initial delay 1s, doubling, capped at 60s between attempts). Retries continue in the background while the session keeps running normally.
+
+If no flush succeeds within the **stalled-flush threshold** (default **15 minutes** from the first failed attempt of the current flush attempt sequence), the session transitions to **read-only mode**:
+
+- `POST /chat` returns `503 Service Unavailable` with header `X-Augchatd-Reason: flush-stalled`.
+- `GET /conversations*` continues to work (reads are unaffected).
+- Background flush attempts continue at the capped backoff schedule.
+- On the **first successful flush** after the transition, the session automatically exits read-only mode and accepts chat messages again — no client action required beyond a retry.
+
+**Hot data is still not dropped while in read-only mode.** The durability guarantee holds: hot is released only after a successful cold write.
+
+The threshold and backoff parameters are daemon-wide configuration; per-session tuning is out of scope for now.
 
 ## What this does **not** guarantee
 
@@ -36,4 +47,6 @@ Failed flushes **retry indefinitely** while the session keeps running. The integ
 
 ## Observability
 
-Logs go to stderr; flush failures and retries are logged there. Operators wire collectors as they see fit (see [observability](observability.md)).
+Logs go to stderr; flush failures, retries, the read-only-mode transition, and the recovery event are all logged there. Operators wire collectors as they see fit (see [observability](observability.md)).
+
+The **read-only-mode transition** is the event most worth alerting on — it means a tenant's bucket has been unreachable for an extended period. Recovery is also logged so operators can confirm the issue resolved.

@@ -8,7 +8,7 @@ Built following the [Software Knowledge Playbook](https://github.com/TiagoJacobs
 ## Status of this spec
 
 - **Mode**: prescriptive (new system). No code exists yet; the spec describes what *should* be built.
-- **Sole evidence**: `README.md` at commit `e562b2b` (initial commit). Every claim references it.
+- **Primary evidence**: `README.md`. Established claims are pinned to `README.md@e562b2b` (initial commit). Claims referencing `README.md` without a commit pin point to content added by an in-flight README edit that has not yet been committed — re-pin them via `/code-changed` after the next commit.
 - **Default status of every statement**: `proposed`. Statements become `current` only when implementation and tests confirm them.
 - **Maturity**: pre-1.0. README declares "API and storage layout may change before 1.0".
 

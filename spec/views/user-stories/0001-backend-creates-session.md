@@ -48,3 +48,21 @@ Given we want a chat with no tools and no RAG
  Then we receive a working session
   And no MCP servers or RAG indexes are exposed to that session
 ```
+
+## Scenario — production TTL
+
+```
+Given we are running in production and want fewer JWT refresh round-trips
+ When our backend posts with ttl_seconds: 1800 (30 minutes)
+ Then we receive { session_id, jwt, expires_at } where expires_at is ~30 minutes in the future
+  And the iframe will not need to refresh until that window elapses
+```
+
+## Scenario — default TTL is dev-friendly
+
+```
+Given we do not set ttl_seconds
+ When our backend posts to augchatd /sessions
+ Then we receive a JWT whose lifetime is 60 seconds (the default)
+  And during development the integrator's refresh path is exercised every minute
+```

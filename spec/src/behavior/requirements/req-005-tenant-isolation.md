@@ -22,7 +22,7 @@ augchatd provides *logical* isolation of tenants inside a single process:
 - mTLS identifies the tenant at session setup.
 - JWT authenticates at chat time, bound to a single session.
 - Per-session credentials live in memory, scoped to that session.
-- Hot storage is partitioned by mTLS tenant (one SQLite DB per tenant).
+- Hot storage is partitioned by `(mTLS tenant, user)` — one SQLite DB per tenant-user pair, organized as `data/<tenantId>/<userId>.sqlite`. The per-user partition avoids write contention between concurrent users of the same tenant; the per-tenant directory groups them for tenancy clarity.
 
 For tenants that are **mutually hostile**, the supported deployment is one augchatd process per tenant.
 

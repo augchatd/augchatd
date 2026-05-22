@@ -17,7 +17,7 @@ links:
 - mTLS identifies the tenant at setup.
 - JWT authenticates per session at chat time.
 - Per-session credentials and scope live in process memory, scoped to a single `session_id`.
-- Hot storage is partitioned by mTLS tenant: **one SQLite DB per tenant**.
+- Hot storage is partitioned by `(mTLS tenant, user)`: **one SQLite DB per tenant-user pair**, organized as `data/<tenantId>/<userId>.sqlite`. The per-user partitioning eliminates write contention between concurrent end users of the same tenant; the per-tenant directory groups them for tenancy clarity. See [adr-0002](../architecture/adrs/0002-embedded-sqlite-per-mtls-tenant.md) and [contract-storage-hot](../behavior/contracts/storage-hot.md).
 
 Trust boundary: the **process**.
 
@@ -30,6 +30,8 @@ The common B2B SaaS case: tenants do not attack each other through memory bugs o
 Mutually hostile tenants. Sharing a process means a memory-safety bug or escalation vector affects all tenants in that process.
 
 **Supported deployment for hostile tenants: one augchatd process per tenant.**
+
+For the **load scaling** angle of the same deployment guidance — when a single tenant's concurrent user count exceeds what one process can serve — see [horizontal-scaling](horizontal-scaling.md). The operational answer (one process per tenant) is the same; the motivations are independent.
 
 ## What integrators must not assume
 
