@@ -9,6 +9,7 @@ import {
   AssistantChatTransport,
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
+import { MarkdownText } from "./Markdown.tsx";
 
 interface HealthState {
   mode: "demo" | "prod";
@@ -165,7 +166,7 @@ function AssistantMessage() {
     <MessagePrimitive.Root className="message assistant">
       <div className="message-role">Assistant</div>
       <div className="message-content">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       </div>
     </MessagePrimitive.Root>
   );
