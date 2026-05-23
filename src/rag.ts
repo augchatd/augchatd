@@ -215,10 +215,12 @@ function truncate(s: string, max: number): string {
 
 export function toolsForActiveRagConnectors(
   connectors: RagConnector[],
+  activeMap?: Map<string, boolean>,
 ): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   for (const c of connectors) {
-    if (!c.default_active) continue;
+    const active = activeMap ? (activeMap.get(c.descriptive_id) ?? c.default_active) : c.default_active;
+    if (!active) continue;
     const entry = connected.get(c.descriptive_id);
     if (!entry) continue;
     Object.assign(out, entry.tools);

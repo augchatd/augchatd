@@ -12,9 +12,13 @@ import { toolsForActiveConnectors } from "../mcp.ts";
 import { toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
+import { getConversation, snapshotActiveMap } from "../conversation-registry.ts";
 
 interface ChatRequestBody {
-  /** Thread id from the AssistantChatTransport (assistant-ui default). */
+  /**
+   * Thread / conversation id. Required: the client must first call
+   * `POST /conversations` to register the id (per contract-connector-toggle).
+   */
   id?: string;
   messages: UIMessage[];
 }
@@ -53,22 +57,31 @@ export async function chatHandler(c: Context): Promise<Response> {
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     return c.json({ error: "missing_messages" }, 400);
   }
+  if (!body.id || typeof body.id !== "string") {
+    return c.json({ error: "missing_conversation_id" }, 400);
+  }
+
+  const conversationId = body.id;
+  const conversation = getConversation(conversationId, session.session_id);
+  if (!conversation) {
+    // Per contract-connector-toggle: the conversation must be registered
+    // first via POST /conversations. The bundled UI does this on boot.
+    return c.json({ error: "conversation_not_found" }, 404);
+  }
+
+  // Snapshot at the start of the turn — per contract-session-chat:
+  // "active set is captured at the start of each chat turn". In-flight
+  // toggles do not affect this turn.
+  const activeMap = snapshotActiveMap(conversation, session);
 
   const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
   const ragConnectors = session.connectors.filter((c) => c.type === "rag");
   const tools = {
-    ...toolsForActiveConnectors(mcpConnectors),
-    ...toolsForActiveRagConnectors(ragConnectors),
+    ...toolsForActiveConnectors(mcpConnectors, activeMap),
+    ...toolsForActiveRagConnectors(ragConnectors, activeMap),
   };
 
   const messages = await convertToModelMessages(body.messages);
-
-  // Conversation id for tracing: prefer the thread id sent by the
-  // AssistantChatTransport; fall back to the first message's id (also
-  // stable per thread); finally synthesize one so a malformed client
-  // still gets a file rather than dropping events.
-  const conversationId =
-    body.id ?? body.messages[0]?.id ?? `unknown-${Date.now()}`;
 
   writeTraceEvent(conversationId, {
     type: "request",
@@ -85,6 +98,7 @@ export async function chatHandler(c: Context): Promise<Response> {
       type: c.type,
       name: c.name,
       default_active: c.default_active,
+      active: activeMap.get(c.descriptive_id) ?? c.default_active,
     })),
     messages: body.messages,
   });

@@ -101,14 +101,20 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
 
 /**
  * Tools exposed to the LLM for the current turn, filtered by the active set.
- * For the demo mode in this slice there's no per-conversation active map yet,
- * so we use each connector's `default_active`. When conversation persistence
- * lands, this signature takes the conversation's saved active map.
+ *
+ * `activeMap` (if provided) is the conversation's per-turn snapshot built
+ * by conversation-registry.snapshotActiveMap — it OVERRIDES each connector's
+ * `default_active`. When absent (e.g. an internal caller without a
+ * conversation in hand), we fall back to `default_active`.
  */
-export function toolsForActiveConnectors(connectors: McpConnector[]): Record<string, Tool> {
+export function toolsForActiveConnectors(
+  connectors: McpConnector[],
+  activeMap?: Map<string, boolean>,
+): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   for (const c of connectors) {
-    if (!c.default_active) continue;
+    const active = activeMap ? (activeMap.get(c.descriptive_id) ?? c.default_active) : c.default_active;
+    if (!active) continue;
     const entry = connected.get(c.descriptive_id);
     if (!entry) continue;
     Object.assign(out, entry.tools);
