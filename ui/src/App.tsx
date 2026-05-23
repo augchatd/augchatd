@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -14,6 +14,9 @@ import {
 import { MarkdownText } from "./Markdown.tsx";
 import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
 import { ConnectorsMenu } from "./ConnectorsMenu.tsx";
+import { ModelPicker } from "./ModelPicker.tsx";
+
+type AuthedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 // CitationsPanel temporarily removed — the useThread selector returned a
 // new array each render, triggering React error #185 (max update depth).
 // Reintroduce with the imperative useThreadRuntime + subscribe pattern
@@ -103,9 +106,8 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       {health.mode === "demo" && (
-        <div className="flex items-center justify-between gap-4 border-b border-warn-border bg-warn-bg px-4 py-2 text-[13px] font-medium tracking-wide text-warn-fg">
-          <span className="flex-1 text-center">Demo session — not authenticated</span>
-          <ConnectorsMenu conversationId={conversationId} jwt={jwt} />
+        <div className="border-b border-warn-border bg-warn-bg px-4 py-2 text-center text-[13px] font-medium tracking-wide text-warn-fg">
+          Demo session — not authenticated
         </div>
       )}
       <ChatRoom initialJwt={jwt} conversationId={conversationId} />
@@ -143,6 +145,27 @@ function ChatRoom({
 }) {
   const jwtRef = useRef(initialJwt);
 
+  // Shared "authed fetch" for admin endpoints (model picker, connector toggle).
+  // Mirrors the JWT refresh logic in the chat transport below.
+  const authedFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const withAuth = (token: string): RequestInit => {
+        const h = new Headers(init?.headers);
+        h.set("Authorization", `Bearer ${token}`);
+        return { ...init, headers: h };
+      };
+      const first = await fetch(input, withAuth(jwtRef.current));
+      if (first.status !== 401) return first;
+      try {
+        jwtRef.current = await fetchDemoJwt();
+      } catch {
+        return first;
+      }
+      return fetch(input, withAuth(jwtRef.current));
+    },
+    [],
+  );
+
   const transport = useMemo(
     () =>
       new AssistantChatTransport({
@@ -179,7 +202,7 @@ function ChatRoom({
             />
           </div>
         </ThreadPrimitive.Viewport>
-        <Composer />
+        <Composer conversationId={conversationId} authedFetch={authedFetch} />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
@@ -327,25 +350,37 @@ function BranchPicker() {
   );
 }
 
-function Composer() {
+function Composer({
+  conversationId,
+  authedFetch,
+}: {
+  conversationId: string;
+  authedFetch: AuthedFetch;
+}) {
   return (
     <div className="border-t border-border bg-bg-base">
-      <ComposerPrimitive.Root className="mx-auto flex w-full max-w-thread items-end gap-2 px-4 py-3">
-        <ComposerPrimitive.Input
-          placeholder="Send a message…"
-          autoFocus
-          rows={1}
-          className="
-            flex-1 resize-none rounded-lg border border-border bg-bg-soft px-3 py-2
-            text-fg-base placeholder:text-fg-muted
-            focus:border-accent focus:outline-none
-            min-h-[40px] max-h-[200px]
-          "
-        />
-        <ComposerPrimitive.Send className="rounded-lg bg-accent px-4 py-2 font-semibold text-bg-base hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-          Send
-        </ComposerPrimitive.Send>
-      </ComposerPrimitive.Root>
+      <div className="mx-auto flex w-full max-w-thread flex-col gap-2 px-4 pb-3 pt-3">
+        <div className="flex items-center gap-2">
+          <ModelPicker conversationId={conversationId} authedFetch={authedFetch} />
+          <ConnectorsMenu conversationId={conversationId} authedFetch={authedFetch} />
+        </div>
+        <ComposerPrimitive.Root className="flex items-end gap-2">
+          <ComposerPrimitive.Input
+            placeholder="Send a message…"
+            autoFocus
+            rows={1}
+            className="
+              flex-1 resize-none rounded-lg border border-border bg-bg-soft px-3 py-2
+              text-fg-base placeholder:text-fg-muted
+              focus:border-accent focus:outline-none
+              min-h-[40px] max-h-[200px]
+            "
+          />
+          <ComposerPrimitive.Send className="rounded-lg bg-accent px-4 py-2 font-semibold text-bg-base hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+            Send
+          </ComposerPrimitive.Send>
+        </ComposerPrimitive.Root>
+      </div>
     </div>
   );
 }

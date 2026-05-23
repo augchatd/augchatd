@@ -26,8 +26,14 @@ export async function listSessionModelsHandler(c: Context): Promise<Response> {
   const key = `${session.session_id}:${session.model.provider}`;
   const cached = cache.get(key);
   const fresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+  const payload = (models: ProviderModel[], wasCached: boolean) => ({
+    models,
+    cached: wasCached,
+    current_model_id: session.model.model_id,
+    provider: session.model.provider,
+  });
   if (fresh) {
-    return c.json({ models: cached.models, cached: true });
+    return c.json(payload(cached.models, true));
   }
   try {
     const models = await listProviderModels(
@@ -35,7 +41,7 @@ export async function listSessionModelsHandler(c: Context): Promise<Response> {
       session.model.api_key,
     );
     cache.set(key, { fetchedAt: Date.now(), models });
-    return c.json({ models, cached: false });
+    return c.json(payload(models, false));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ error: "provider_list_failed", detail: msg }, 502);

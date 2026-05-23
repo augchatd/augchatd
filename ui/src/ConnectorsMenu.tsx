@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Per-conversation connector toggle popover.
+ * Per-conversation connector toggle popover (composer-toolbar variant).
  *
- * Backed by the GET / PUT endpoints from contract-connector-toggle:
+ * Backed by the GET/PUT endpoints from contract-connector-toggle:
  *   GET /conversations/:cid/connectors          → list with active flags
  *   PUT /conversations/:cid/connectors/:did     → toggle one
  *
- * On open: fetches the current list. On toggle: PUTs the new state, then
- * re-fetches to confirm (last-write-wins; see spec).
+ * Uses the shared authed-fetch (JWT refresh) provided by ChatRoom.
  */
 
 interface ConnectorListItem {
@@ -18,12 +17,14 @@ interface ConnectorListItem {
   active: boolean;
 }
 
+type AuthedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 export function ConnectorsMenu({
   conversationId,
-  jwt,
+  authedFetch,
 }: {
   conversationId: string;
-  jwt: string;
+  authedFetch: AuthedFetch;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ConnectorListItem[] | null>(null);
@@ -34,20 +35,20 @@ export function ConnectorsMenu({
   const load = useCallback(async () => {
     setError(null);
     try {
-      const r = await fetch(
+      const r = await authedFetch(
         `/conversations/${encodeURIComponent(conversationId)}/connectors`,
-        { headers: { Authorization: `Bearer ${jwt}` } },
       );
       if (!r.ok) throw new Error(`GET HTTP ${r.status}`);
       setItems((await r.json()) as ConnectorListItem[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [conversationId, jwt]);
+  }, [conversationId, authedFetch]);
 
+  // Eagerly fetch on mount so the button label can show N/M without a click.
   useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+    void load();
+  }, [load]);
 
   // Click outside closes the popover.
   useEffect(() => {
@@ -63,19 +64,15 @@ export function ConnectorsMenu({
     setBusy(descriptive_id);
     setError(null);
     try {
-      const r = await fetch(
+      const r = await authedFetch(
         `/conversations/${encodeURIComponent(conversationId)}/connectors/${encodeURIComponent(descriptive_id)}`,
         {
           method: "PUT",
-          headers: {
-            Authorization: `Bearer ${jwt}`,
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ active: next }),
         },
       );
       if (r.status !== 204) throw new Error(`PUT HTTP ${r.status}`);
-      // Re-fetch per spec (last-write-wins; observe the committed value).
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -93,19 +90,20 @@ export function ConnectorsMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="
-          rounded border border-warn-border bg-warn-bg/40 px-2 py-0.5
-          text-[12px] font-normal text-warn-fg
-          hover:bg-warn-bg/70
+          inline-flex items-center gap-1 rounded-md border border-border
+          bg-bg-soft px-2.5 py-1 text-[12px] text-fg-base
+          hover:bg-bg-mid
         "
         aria-haspopup="true"
         aria-expanded={open}
       >
-        Connectors{items ? ` (${activeCount}/${totalCount})` : ""}
+        <span aria-hidden>🛠</span>
+        <span>Tools{items ? ` ${activeCount}/${totalCount}` : ""}</span>
       </button>
       {open && (
         <div
           className="
-            absolute right-0 top-full z-10 mt-1 w-80
+            absolute bottom-full left-0 z-10 mb-1 w-80
             rounded-lg border border-border bg-bg-base p-3
             text-left text-fg-base shadow-lg
           "
