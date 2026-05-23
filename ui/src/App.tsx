@@ -309,6 +309,14 @@ function AssistantMessage() {
         Assistant
       </div>
       <div className="rounded-2xl rounded-tl-md border border-border bg-bg-soft px-4 py-3 max-w-[95%]">
+        {/* While the response is still in flight and no content has
+            arrived (no text-delta, no tool-call), the bubble was
+            collapsing to a thin empty rectangle that looked broken.
+            Three pulsing dots fill the gap; they disappear as soon
+            as any part lands. */}
+        <MessagePrimitive.If hasContent={false}>
+          <ThinkingDots />
+        </MessagePrimitive.If>
         <MessagePrimitive.Parts
           components={{
             Text: MarkdownText,
@@ -325,6 +333,25 @@ function AssistantMessage() {
         <BranchPicker />
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-0.5" aria-label="thinking">
+      <span
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-muted"
+        style={{ animationDelay: "0ms" }}
+      />
+      <span
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-muted"
+        style={{ animationDelay: "150ms" }}
+      />
+      <span
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-fg-muted"
+        style={{ animationDelay: "300ms" }}
+      />
+    </div>
   );
 }
 
