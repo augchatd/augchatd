@@ -25,6 +25,12 @@ export interface McpConnector extends CommonConnector {
   type: "mcp";
   url: string;
   auth: Record<string, unknown>;
+  /**
+   * Safety gate: when true (default), augchatd only exposes tools the
+   * MCP server flags as read-only (or whose names look read-y). Set to
+   * false to allow writes — explicit integrator opt-in.
+   */
+  read_only: boolean;
 }
 
 export interface RagConnector extends CommonConnector {
@@ -77,7 +83,8 @@ function parseEntry(entry: unknown, i: number): Connector {
   if (type === "mcp") {
     const url = str(e, "url", i);
     const auth = obj(e, "auth", i);
-    return { type, descriptive_id, name, default_active, url, auth };
+    const read_only = e["read_only"] === undefined ? true : boolField(e, "read_only", i);
+    return { type, descriptive_id, name, default_active, url, auth, read_only };
   }
   if (type === "rag") {
     const backend = str(e, "backend", i);
@@ -118,6 +125,8 @@ function bool(e: Record<string, unknown>, key: string, i: number): boolean {
   }
   return v;
 }
+
+const boolField = bool;
 
 function obj(e: Record<string, unknown>, key: string, i: number): Record<string, unknown> {
   const v = e[key];

@@ -43,9 +43,7 @@ export async function initMcpConnectors(connectors: McpConnector[]): Promise<voi
 }
 
 async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
-  const headers: Record<string, string> = {};
-  const bearer = typeof c.auth.bearer === "string" ? c.auth.bearer : undefined;
-  if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+  const headers = buildAuthHeaders(c.auth);
 
   const transport = new StreamableHTTPClientTransport(new URL(c.url), {
     requestInit: { headers },
@@ -59,7 +57,17 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
 
   const listed = await client.listTools();
   const tools: Record<string, Tool> = {};
+  const skippedWrites: string[] = [];
+  const skippedUnannotated: string[] = [];
   for (const t of listed.tools) {
+    if (c.read_only && !isReadOnlyTool(t)) {
+      if (t.annotations?.readOnlyHint === false || t.annotations?.destructiveHint === true) {
+        skippedWrites.push(t.name);
+      } else {
+        skippedUnannotated.push(t.name);
+      }
+      continue;
+    }
     const namespaced = `${c.descriptive_id}__${t.name}`;
     tools[namespaced] = tool({
       description: t.description ?? `MCP tool ${t.name} (via ${c.descriptive_id})`,
@@ -72,6 +80,16 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
         return flattenResult(result);
       },
     });
+  }
+  if (skippedWrites.length > 0) {
+    console.log(
+      `  mcp[${c.descriptive_id}] read_only=true: skipped ${skippedWrites.length} write tool(s) (server-declared): ${skippedWrites.slice(0, 6).join(", ")}${skippedWrites.length > 6 ? ", …" : ""}`,
+    );
+  }
+  if (skippedUnannotated.length > 0) {
+    console.log(
+      `  mcp[${c.descriptive_id}] read_only=true: skipped ${skippedUnannotated.length} unannotated tool(s) (no readOnlyHint set): ${skippedUnannotated.slice(0, 6).join(", ")}${skippedUnannotated.length > 6 ? ", …" : ""}`,
+    );
   }
 
   return { connector: c, client, tools };
@@ -90,6 +108,57 @@ export function toolsForActiveConnectors(connectors: McpConnector[]): Record<str
     const entry = connected.get(c.descriptive_id);
     if (!entry) continue;
     Object.assign(out, entry.tools);
+  }
+  return out;
+}
+
+/**
+ * Read-only tool classifier.
+ *
+ * Trust the MCP server's own declaration via the tool annotations defined in
+ * the MCP spec (`readOnlyHint`, `destructiveHint`). No name-based guessing —
+ * heuristics produce false positives/negatives and are not a safety boundary.
+ *
+ * Strict semantics under `read_only: true`:
+ *   - Allow only when the server explicitly set `readOnlyHint === true`.
+ *   - Block everything else (including unannotated tools and tools where
+ *     `destructiveHint === true`).
+ *
+ * If a server you trust doesn't annotate, fix that server-side. As an escape
+ * hatch, set `read_only: false` on the connector to disable the gate
+ * entirely — that's the integrator opting in to writes explicitly.
+ */
+function isReadOnlyTool(t: {
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+}): boolean {
+  return t.annotations?.readOnlyHint === true;
+}
+
+/**
+ * Build outbound request headers from the connector's auth object.
+ * Accepted shapes (matching the RAG side, see src/rag.ts):
+ *   - { bearer: "..." }                  → Authorization: Bearer ...
+ *   - { basic: { username, password } }  → Authorization: Basic base64(user:pass)
+ *   - { headers: { "X-...": "..." } }    → forwarded as-is (arbitrary header set)
+ * Shapes combine: e.g. { bearer, headers } is allowed; later ones win on
+ * collision.
+ */
+function buildAuthHeaders(auth: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof auth.bearer === "string") {
+    out["Authorization"] = `Bearer ${auth.bearer}`;
+  }
+  if (typeof auth.basic === "object" && auth.basic !== null) {
+    const b = auth.basic as { username?: unknown; password?: unknown };
+    if (typeof b.username === "string" && typeof b.password === "string") {
+      const enc = Buffer.from(`${b.username}:${b.password}`).toString("base64");
+      out["Authorization"] = `Basic ${enc}`;
+    }
+  }
+  if (typeof auth.headers === "object" && auth.headers !== null) {
+    for (const [k, v] of Object.entries(auth.headers as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
   }
   return out;
 }
