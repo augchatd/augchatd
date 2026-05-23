@@ -9,6 +9,33 @@ evidence:
 
 # Capabilities
 
+> [!IMPORTANT] PENDING RECONCILIATION
+> **Two endpoints landed on branch `trace-conversations` (commit `95f98f5`)
+> that aren't yet a capability in the table below:**
+>
+> - `GET /session/models` — proxies the provider's list-models endpoint
+>   (OpenAI `/v1/models`, Anthropic `/v1/models`); returns chat-capable
+>   models plus the session's current default model_id.
+> - `PUT /conversations/:cid/model { model_id }` — sets a per-conversation
+>   model override (validated against the cached list). Persists in the
+>   in-memory conversation registry (same divergence as
+>   [contract-connector-toggle](contracts/connector-toggle.md)).
+>
+> Today, `cap-session-mgmt` describes the model as set once at session
+> creation (`POST /sessions` carries `model.{provider, model_id, api_key}`).
+> Provider + api_key remain session-scoped; only `model_id` is now
+> overridable per conversation.
+>
+> **Proposed direction:** add a new row `cap-model-selection` covering both
+> endpoints, with `req-001-per-user-credentials` as the safety boundary
+> (still no credential exposure: provider/key never leak through the picker,
+> only the public model id). Or extend `cap-session-mgmt` with a sub-bullet.
+> The picker complements rather than replaces the session-creation model,
+> so a sibling capability is cleaner.
+>
+> Same in-memory persistence caveat applies (override lost on restart, UI
+> resets label on reload). To be reconciled together with `cap-storage`.
+
 Top-level capabilities augchatd offers. Each links to its requirement(s) and behavior contract(s).
 
 | ID | Capability | Owns | Requirements | Contracts |
