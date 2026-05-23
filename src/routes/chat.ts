@@ -9,7 +9,7 @@ import {
 } from "ai";
 import { llmFor } from "../llm.ts";
 import { toolsForActiveConnectors } from "../mcp.ts";
-import { toolsForActiveRagConnectors } from "../rag.ts";
+import { consumeRagHits, toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
 import { createConversation, getConversation, resolveModelId, snapshotActiveMap } from "../conversation-registry.ts";
@@ -119,6 +119,34 @@ export async function chatHandler(c: Context): Promise<Response> {
         tools: Object.keys(tools).length > 0 ? tools : undefined,
         stopWhen: stepCountIs(MAX_STEPS),
         onStepFinish: (step) => {
+          // After each step, drain the per-tool-call RAG hits captured
+          // by the retrieve tool and emit a `source-document` UI part
+          // per hit. assistant-ui renders these as chips beneath the
+          // message, so the LLM no longer has to paste inline citations.
+          const sourceDocsEmitted: Array<{ sourceId: string; title: string }> = [];
+          for (const tr of step.toolResults ?? []) {
+            if (!tr.toolName.endsWith("__retrieve")) continue;
+            const hits = consumeRagHits(tr.toolCallId);
+            for (const h of hits) {
+              const sourceId = `${tr.toolCallId}:${h.doc_id}`;
+              writer.write({
+                type: "source-document",
+                sourceId,
+                mediaType: "text/plain",
+                title: h.title,
+                providerMetadata: {
+                  augchatd: {
+                    source_descriptive_id: h.source_descriptive_id,
+                    index: h.index,
+                    doc_id: h.doc_id,
+                    score: h.score ?? null,
+                    snippet: h.snippet,
+                  },
+                },
+              });
+              sourceDocsEmitted.push({ sourceId, title: h.title });
+            }
+          }
           writeTraceEvent(conversationId, {
             type: "step.finish",
             conversation_id: conversationId,
@@ -128,6 +156,7 @@ export async function chatHandler(c: Context): Promise<Response> {
             reasoning_text: step.reasoningText,
             tool_calls: step.toolCalls,
             tool_results: step.toolResults,
+            source_documents_emitted: sourceDocsEmitted,
             finish_reason: step.finishReason,
             usage: step.usage,
             warnings: step.warnings,

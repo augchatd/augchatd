@@ -14,6 +14,7 @@ import {
 import { useAuiState } from "@assistant-ui/store";
 import { MarkdownText } from "./Markdown.tsx";
 import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
+import { SourceBlock } from "./blocks/SourceBlock.tsx";
 import { ConnectorsMenu } from "./ConnectorsMenu.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 
@@ -240,6 +241,7 @@ function AssistantMessage() {
             Text: MarkdownText,
             Image: ImagePart,
             Reasoning: ReasoningPart,
+            Source: SourceBlock,
             tools: { Fallback: ToolCallBlock },
             ToolGroup,
           }}

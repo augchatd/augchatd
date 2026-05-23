@@ -30,6 +30,37 @@ const connected = new Map<string, ConnectedRag>();
 
 const DEFAULT_TOP_K = 5;
 
+/**
+ * Structured per-hit data captured for the UI side-channel.
+ *
+ * The retrieve tool's text return goes to the LLM (so it can ground).
+ * In parallel we stash these structured records under the toolCallId so
+ * the chat handler can emit `source-document` UI parts after the tool
+ * result lands — assistant-ui then renders a chip per hit beneath the
+ * message, no inline parenthetical citation needed.
+ */
+export interface RagHit {
+  source_descriptive_id: string;
+  index: string;
+  doc_id: string;
+  score: number | null;
+  title: string;
+  snippet: string;
+}
+
+const hitsByToolCall = new Map<string, RagHit[]>();
+
+/**
+ * Read and remove the hits stored for `toolCallId`. The chat handler
+ * calls this once per retrieve tool result inside `onStepFinish`. Any
+ * hits left behind would be a memory leak — the Map is cleared on read.
+ */
+export function consumeRagHits(toolCallId: string): RagHit[] {
+  const hits = hitsByToolCall.get(toolCallId) ?? [];
+  hitsByToolCall.delete(toolCallId);
+  return hits;
+}
+
 export async function initRagConnectors(connectors: RagConnector[]): Promise<void> {
   for (const c of connectors) {
     try {
@@ -88,7 +119,7 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
       required: ["query"],
       additionalProperties: false,
     }),
-    execute: async (rawInput) => {
+    execute: async (rawInput, { toolCallId }) => {
       const input = rawInput as { query: string; top_k?: number };
       const top_k = Math.min(20, Math.max(1, input.top_k ?? DEFAULT_TOP_K));
       const body = {
@@ -126,6 +157,10 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
         return `retrieval error: HTTP ${r.status} ${text.slice(0, 200)}`;
       }
       const data = (await r.json()) as OpenSearchResponse;
+      // Capture structured hits for the UI side-channel. The chat
+      // handler reads these in onStepFinish and emits one
+      // source-document part per hit (see consumeRagHits + chat.ts).
+      hitsByToolCall.set(toolCallId, parseHitsForUi(data, c));
       return formatHits(data, c.indexes);
     },
   });
@@ -211,6 +246,68 @@ function formatSource(src: Record<string, unknown>): string {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max) + "… [truncated]";
+}
+
+const TITLE_FIELD_CANDIDATES = ["title", "name", "item_name"];
+const MAX_TITLE_CHARS = 80;
+const MAX_SNIPPET_CHARS = 300;
+
+function parseHitsForUi(data: OpenSearchResponse, c: RagConnector): RagHit[] {
+  const hits = data.hits?.hits ?? [];
+  return hits.map((h) => {
+    const src = h._source;
+    // Title: prefer a real title-ish field; fall back to a snippet of
+    // text; final fallback is the doc id (always non-empty).
+    let title: string | undefined;
+    for (const k of TITLE_FIELD_CANDIDATES) {
+      const v = src[k];
+      if (typeof v === "string" && v.length > 0) {
+        title = truncate(v, MAX_TITLE_CHARS);
+        break;
+      }
+    }
+    // metadata-nested title (e.g. metadata.item_name) — common in the
+    // corpora we hit so far.
+    if (!title && typeof src["metadata"] === "object" && src["metadata"] !== null) {
+      const meta = src["metadata"] as Record<string, unknown>;
+      for (const k of TITLE_FIELD_CANDIDATES) {
+        const v = meta[k];
+        if (typeof v === "string" && v.length > 0) {
+          title = truncate(v, MAX_TITLE_CHARS);
+          break;
+        }
+      }
+    }
+    if (!title) {
+      for (const k of TEXT_FIELD_CANDIDATES) {
+        const v = src[k];
+        if (typeof v === "string" && v.length > 0) {
+          title = truncate(v, MAX_TITLE_CHARS);
+          break;
+        }
+      }
+    }
+    if (!title) title = h._id;
+
+    // Snippet: a longer slice of the text field for the expand-on-click view.
+    let snippet = "";
+    for (const k of TEXT_FIELD_CANDIDATES) {
+      const v = src[k];
+      if (typeof v === "string" && v.length > 0) {
+        snippet = truncate(v, MAX_SNIPPET_CHARS);
+        break;
+      }
+    }
+
+    return {
+      source_descriptive_id: c.descriptive_id,
+      index: h._index,
+      doc_id: h._id,
+      score: h._score,
+      title,
+      snippet,
+    };
+  });
 }
 
 export function toolsForActiveRagConnectors(
