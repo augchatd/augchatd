@@ -42,10 +42,13 @@ links:
 >   — the demo opens one DB at boot and reuses it. The `openHotDb` helper
 >   already keys by `(tenant, user)`; prod just needs to call it on session
 >   bind instead of at boot.
-> - **UI-side message hydration on page reload** — `GET /conversations/:cid/messages`
->   exists and is correct, but the bundled UI's assistant-ui runtime
->   doesn't consume it yet. Until then, a hard reload loses the visible
->   message history even though the server has it.
+> - **UI-side message hydration on page reload** — RESOLVED for the
+>   demo path. The bundled UI uses `/c/<conversation_id>` as the URL
+>   convention: on boot it parses the path, GETs
+>   `/conversations/<cid>/messages` to hydrate the runtime, and falls
+>   back to mint+`replaceState` on 404. The auth boundary stays
+>   implicit (per-`(tenant, user)` SQLite partition). Tracked as item
+>   10 in augchatd/augchatd#5 for spec write-up.
 >
 > Status stays `proposed` (no test-pointers yet; partial implementation).
 

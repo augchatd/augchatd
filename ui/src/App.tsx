@@ -11,7 +11,7 @@ import {
   AssistantChatTransport,
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
-import { useAuiState } from "@assistant-ui/store";
+import type { UIMessage } from "ai";
 import { MarkdownText } from "./Markdown.tsx";
 import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
 import { SourceBlock } from "./blocks/SourceBlock.tsx";
@@ -19,6 +19,11 @@ import { ConnectorsMenu } from "./ConnectorsMenu.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 
 type AuthedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+interface BootState {
+  cid: string;
+  initialMessages: UIMessage[];
+}
 // CitationsPanel temporarily removed — the useThread selector returned a
 // new array each render, triggering React error #185 (max update depth).
 // Reintroduce with the imperative useThreadRuntime + subscribe pattern
@@ -55,6 +60,7 @@ const SUGGESTIONS = [
 export default function App() {
   const [health, setHealth] = useState<HealthState | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
+  const [boot, setBoot] = useState<BootState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,15 +71,20 @@ export default function App() {
         if (cancelled) return;
         setHealth(h);
 
-        if (h.mode === "demo") {
-          const j = await fetchDemoJwt();
-          if (cancelled) return;
-          setJwt(j);
-        } else {
+        if (h.mode !== "demo") {
           setError(
             "Production mode requires a JWT via postMessage — not yet wired in this scaffold.",
           );
+          return;
         }
+
+        const j = await fetchDemoJwt();
+        if (cancelled) return;
+        setJwt(j);
+
+        const b = await resolveBootConversation(j);
+        if (cancelled) return;
+        setBoot(b);
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -91,7 +102,7 @@ export default function App() {
       </div>
     );
   }
-  if (!health || !jwt) {
+  if (!health || !jwt || !boot) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-fg-muted">
         Loading…
@@ -106,9 +117,63 @@ export default function App() {
           Demo session — not authenticated
         </div>
       )}
-      <ChatRoom initialJwt={jwt} />
+      <ChatRoom
+        key={boot.cid}
+        initialJwt={jwt}
+        conversationId={boot.cid}
+        initialMessages={boot.initialMessages}
+      />
     </div>
   );
+}
+
+/**
+ * Resolve which conversation_id to use on boot, hydrating server-side
+ * messages when possible. URL convention: `/c/<conversation_id>`.
+ *
+ *   no path / unknown cid → mint a fresh conversation, replaceState
+ *   /c/<cid> with messages → hydrate
+ *   /c/<cid> with 404      → mint fresh + replaceState
+ *
+ * Auth boundary is implicit: the per-(tenant, user) SQLite partition
+ * makes cids from other users resolve to `conversation_not_found`. No
+ * extra check needed here.
+ */
+async function resolveBootConversation(jwt: string): Promise<BootState> {
+  const match = /^\/c\/([^/?#]+)/.exec(window.location.pathname);
+  const urlCid = match?.[1];
+
+  if (urlCid) {
+    const r = await fetch(`/conversations/${encodeURIComponent(urlCid)}/messages`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (r.ok) {
+      const data = (await r.json()) as {
+        messages: Array<{ message_id: string; role: string; parts: unknown }>;
+      };
+      const initialMessages: UIMessage[] = (data.messages ?? []).map((m) => ({
+        id: m.message_id,
+        role: m.role as UIMessage["role"],
+        parts: m.parts as UIMessage["parts"],
+      }));
+      return { cid: urlCid, initialMessages };
+    }
+    // 404 (or other) — fall through to mint fresh.
+  }
+
+  // Mint via POST /conversations. Server returns a UUID.
+  const r = await fetch("/conversations", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!r.ok) throw new Error(`POST /conversations HTTP ${r.status}`);
+  const { conversation_id } = (await r.json()) as { conversation_id: string };
+  window.history.replaceState(null, "", `/c/${conversation_id}`);
+  return { cid: conversation_id, initialMessages: [] };
 }
 
 async function fetchDemoJwt(): Promise<string> {
@@ -120,8 +185,12 @@ async function fetchDemoJwt(): Promise<string> {
 
 function ChatRoom({
   initialJwt,
+  conversationId,
+  initialMessages,
 }: {
   initialJwt: string;
+  conversationId: string;
+  initialMessages: UIMessage[];
 }) {
   const jwtRef = useRef(initialJwt);
 
@@ -163,15 +232,19 @@ function ChatRoom({
           retriedHeaders.set("Authorization", `Bearer ${jwtRef.current}`);
           return fetch(input, { ...init, headers: retriedHeaders });
         },
+        // Override `body.id` to use OUR conversation_id (the one in
+        // the URL / hydrated from POST /conversations) instead of the
+        // assistant-ui-internal threadListItem.id. assistant-ui's id
+        // stays client-local; the server sees only our cid, which is
+        // what the SQLite row keys on.
+        prepareSendMessagesRequest: ({ messages, trigger, messageId }) => ({
+          body: { id: conversationId, messages, trigger, messageId },
+        }),
       }),
-    [],
+    [conversationId],
   );
 
-  // No `id:` — passing it here is silently ignored by useChatRuntime
-  // (the runtime always uses its internal threadListItem.id from
-  // useAuiState; we read that same id below to keep the toolbar in
-  // sync with what /chat actually sends).
-  const runtime = useChatRuntime({ transport });
+  const runtime = useChatRuntime({ transport, messages: initialMessages });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -186,7 +259,7 @@ function ChatRoom({
             />
           </div>
         </ThreadPrimitive.Viewport>
-        <Composer authedFetch={authedFetch} />
+        <Composer conversationId={conversationId} authedFetch={authedFetch} />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
@@ -335,13 +408,17 @@ function BranchPicker() {
   );
 }
 
-function Composer({ authedFetch }: { authedFetch: AuthedFetch }) {
-  // Read the SAME thread id that the chat transport sends as body.id.
-  // Per @assistant-ui/react-ai-sdk's useChatRuntime, the chat's id comes
-  // from useAuiState((s) => s.threadListItem.id) — NOT from any `id`
-  // option passed to useChatRuntime. We must mirror that here so the
-  // toolbar's GET/PUT calls hit the SAME conversation record as /chat.
-  const conversationId = useAuiState((s) => s.threadListItem.id);
+function Composer({
+  conversationId,
+  authedFetch,
+}: {
+  conversationId: string;
+  authedFetch: AuthedFetch;
+}) {
+  // conversationId comes from the URL (/c/<cid>) via App → ChatRoom →
+  // here. The chat transport's prepareSendMessagesRequest also uses
+  // this same id as body.id, so toolbar GET/PUT and /chat hit the
+  // same SQLite row.
   return (
     <div className="border-t border-border bg-bg-base">
       <div className="mx-auto flex w-full max-w-thread flex-col gap-2 px-4 pb-3 pt-3">
