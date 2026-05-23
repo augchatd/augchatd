@@ -11,6 +11,7 @@ import {
   AssistantChatTransport,
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
+import { useAuiState } from "@assistant-ui/store";
 import { MarkdownText } from "./Markdown.tsx";
 import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
 import { ConnectorsMenu } from "./ConnectorsMenu.tsx";
@@ -53,7 +54,6 @@ const SUGGESTIONS = [
 export default function App() {
   const [health, setHealth] = useState<HealthState | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,11 +68,6 @@ export default function App() {
           const j = await fetchDemoJwt();
           if (cancelled) return;
           setJwt(j);
-          // Per contract-connector-toggle: register the conversation server-side
-          // before chatting. Server snapshots default_active for each connector.
-          const cid = await createConversation(j);
-          if (cancelled) return;
-          setConversationId(cid);
         } else {
           setError(
             "Production mode requires a JWT via postMessage — not yet wired in this scaffold.",
@@ -95,7 +90,7 @@ export default function App() {
       </div>
     );
   }
-  if (!health || !jwt || !conversationId) {
+  if (!health || !jwt) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-fg-muted">
         Loading…
@@ -110,23 +105,9 @@ export default function App() {
           Demo session — not authenticated
         </div>
       )}
-      <ChatRoom initialJwt={jwt} conversationId={conversationId} />
+      <ChatRoom initialJwt={jwt} />
     </div>
   );
-}
-
-async function createConversation(jwt: string): Promise<string> {
-  const r = await fetch("/conversations", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${jwt}`,
-      "Content-Type": "application/json",
-    },
-    body: "{}",
-  });
-  if (!r.ok) throw new Error(`POST /conversations HTTP ${r.status}`);
-  const j = (await r.json()) as { conversation_id: string };
-  return j.conversation_id;
 }
 
 async function fetchDemoJwt(): Promise<string> {
@@ -138,10 +119,8 @@ async function fetchDemoJwt(): Promise<string> {
 
 function ChatRoom({
   initialJwt,
-  conversationId,
 }: {
   initialJwt: string;
-  conversationId: string;
 }) {
   const jwtRef = useRef(initialJwt);
 
@@ -187,7 +166,11 @@ function ChatRoom({
     [],
   );
 
-  const runtime = useChatRuntime({ id: conversationId, transport });
+  // No `id:` — passing it here is silently ignored by useChatRuntime
+  // (the runtime always uses its internal threadListItem.id from
+  // useAuiState; we read that same id below to keep the toolbar in
+  // sync with what /chat actually sends).
+  const runtime = useChatRuntime({ transport });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -202,7 +185,7 @@ function ChatRoom({
             />
           </div>
         </ThreadPrimitive.Viewport>
-        <Composer conversationId={conversationId} authedFetch={authedFetch} />
+        <Composer authedFetch={authedFetch} />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
@@ -350,13 +333,13 @@ function BranchPicker() {
   );
 }
 
-function Composer({
-  conversationId,
-  authedFetch,
-}: {
-  conversationId: string;
-  authedFetch: AuthedFetch;
-}) {
+function Composer({ authedFetch }: { authedFetch: AuthedFetch }) {
+  // Read the SAME thread id that the chat transport sends as body.id.
+  // Per @assistant-ui/react-ai-sdk's useChatRuntime, the chat's id comes
+  // from useAuiState((s) => s.threadListItem.id) — NOT from any `id`
+  // option passed to useChatRuntime. We must mirror that here so the
+  // toolbar's GET/PUT calls hit the SAME conversation record as /chat.
+  const conversationId = useAuiState((s) => s.threadListItem.id);
   return (
     <div className="border-t border-border bg-bg-base">
       <div className="mx-auto flex w-full max-w-thread flex-col gap-2 px-4 pb-3 pt-3">

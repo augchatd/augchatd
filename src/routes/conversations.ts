@@ -68,8 +68,12 @@ export async function listConversationConnectorsHandler(c: Context): Promise<Res
   const cid = c.req.param("conversation_id");
   if (!cid) return c.json({ error: "missing_conversation_id" }, 400);
 
-  const record = getConversation(cid, session.session_id);
-  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+  // Auto-create on first observation (same rule as the chat handler).
+  // The bundled UI's ConnectorsMenu opens the popover before the user has
+  // chatted, so we need to be willing to create the record here too.
+  const record =
+    getConversation(cid, session.session_id) ??
+    createConversation(session, cid);
 
   const items = listConnectorsForConversation(record, session);
   return c.json(items);
@@ -105,8 +109,9 @@ export async function setConversationConnectorStateHandler(c: Context): Promise<
     return c.json({ error: "active_must_be_boolean" }, 400);
   }
 
-  const record = getConversation(cid, session.session_id);
-  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+  const record =
+    getConversation(cid, session.session_id) ??
+    createConversation(session, cid);
 
   const res = setConnectorActive(record, session, did, active);
   if (!res.ok) return c.json({ error: res.reason }, 404);
@@ -143,8 +148,9 @@ export async function setConversationModelHandler(c: Context): Promise<Response>
     return c.json({ error: "model_id_must_be_non_empty_string" }, 400);
   }
 
-  const record = getConversation(cid, session.session_id);
-  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+  const record =
+    getConversation(cid, session.session_id) ??
+    createConversation(session, cid);
 
   let known;
   try {
