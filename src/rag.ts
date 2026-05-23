@@ -87,6 +87,12 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
       const top_k = Math.min(20, Math.max(1, input.top_k ?? DEFAULT_TOP_K));
       const body = {
         size: top_k,
+        // Drop vectors and other big binary-ish fields from the response.
+        // The LLM sees text + metadata; the vector lives only on the
+        // server side for ranking.
+        _source: {
+          excludes: ["embedding", "vector", "_vector", "embeddings"],
+        },
         query: {
           query_string: {
             query: input.query,
@@ -148,18 +154,48 @@ function formatHits(data: OpenSearchResponse, indexes: string[]): string {
   }
   const lines = hits.map((h, i) => {
     const score = h._score?.toFixed(3) ?? "?";
-    const body = previewSource(h._source);
+    const body = formatSource(h._source);
     return `[${i + 1}] index=${h._index} id=${h._id} score=${score}\n${body}`;
   });
   return `Top ${hits.length} hit${hits.length === 1 ? "" : "s"}:\n\n${lines.join("\n\n")}`;
 }
 
-function previewSource(src: Record<string, unknown>): string {
-  // Stringify the source compactly, capped so we don't blow the LLM context.
-  // The LLM gets enough to ground; the integrator's UI may show full hits.
-  const text = JSON.stringify(src);
-  if (text.length <= 1200) return text;
-  return text.slice(0, 1200) + "… [truncated]";
+const TEXT_FIELD_CANDIDATES = ["text_content", "text", "content", "body", "chunk", "passage"];
+const MAX_TEXT_CHARS = 1200;
+const MAX_META_CHARS = 400;
+
+function formatSource(src: Record<string, unknown>): string {
+  // Pull a recognizable text field first; LLM context is cheap on tokens but
+  // not free, so we cap it. Everything else (metadata) goes after, capped
+  // tighter. The full _source is never blindly dumped — that's what bit the
+  // first cut: embeddings (when present despite excludes) or other big
+  // numeric arrays ate the budget before the LLM saw any text.
+  const parts: string[] = [];
+  let primaryKey: string | undefined;
+  for (const k of TEXT_FIELD_CANDIDATES) {
+    const v = src[k];
+    if (typeof v === "string" && v.length > 0) {
+      primaryKey = k;
+      parts.push(`${k}: ${truncate(v, MAX_TEXT_CHARS)}`);
+      break;
+    }
+  }
+  // Metadata: everything else except known noisy/redundant fields.
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (k === primaryKey) continue;
+    if (k === "embedding" || k === "vector" || k === "_vector" || k === "embeddings") continue;
+    if (Array.isArray(v) && v.length > 0 && typeof v[0] === "number") continue; // looks like a vector
+    rest[k] = v;
+  }
+  if (Object.keys(rest).length > 0) {
+    parts.push(`metadata: ${truncate(JSON.stringify(rest), MAX_META_CHARS)}`);
+  }
+  return parts.join("\n");
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : s.slice(0, max) + "… [truncated]";
 }
 
 export function toolsForActiveRagConnectors(
