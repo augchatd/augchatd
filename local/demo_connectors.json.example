@@ -1,14 +1,5 @@
 [
   {
-    "descriptive_id": "mcp_mock",
-    "name": "Mock MCP (local)",
-    "type": "mcp",
-    "default_active": true,
-    "read_only": true,
-    "url": "http://localhost:9000/mcp",
-    "auth": {}
-  },
-  {
     "descriptive_id": "mcp_real_example",
     "name": "Real MCP via custom headers",
     "type": "mcp",

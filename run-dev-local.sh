@@ -18,7 +18,6 @@
 #
 # Usage:
 #   ./run-dev-local.sh            # boot
-#   bun run mock-mcp              # (separate terminal) start the mock MCP if you use it
 
 set -euo pipefail
 cd "$(dirname "$0")"

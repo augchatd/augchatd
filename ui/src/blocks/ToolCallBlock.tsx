@@ -11,7 +11,7 @@ import { Children, type PropsWithChildren } from "react";
  *      pill stacked.
  *
  * 2. `ToolCallBlock` is the per-call pill.
- *    Default state: a single line — `🔧 echo (mcp_mock) · Done`.
+ *    Default state: a single line — `🔧 <tool> (<connector>) · Done`.
  *    Click expands: arguments + result.
  *
  * Two clicks to drill from a many-call message into the JSON of one

@@ -9,8 +9,7 @@
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
     "build:ui": "cd ui && bun install && bun run build",
-    "dev:ui": "cd ui && bun run dev",
-    "mock-mcp": "bun run scripts/mock-mcp-server.ts"
+    "dev:ui": "cd ui && bun run dev"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "latest",
