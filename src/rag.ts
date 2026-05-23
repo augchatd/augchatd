@@ -61,12 +61,15 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
 
   const indexesPath = c.indexes.map(encodeURIComponent).join(",");
 
+  const langClause = c.language
+    ? ` IMPORTANT: this corpus is in ${c.language}. ALWAYS write the query in ${c.language}, translating from the user's language if needed. Lexical search will return zero results if the query language doesn't match the corpus.`
+    : "";
   const retrieveTool = tool({
     description:
       `Retrieve up to top_k passages from the "${c.name}" knowledge base ` +
       `(${c.backend} indexes: ${c.indexes.join(", ")}). Use this whenever ` +
       `you need supporting facts or quotes from this corpus. Input is a ` +
-      `natural-language query.`,
+      `natural-language query.${langClause}`,
     inputSchema: jsonSchema({
       type: "object",
       properties: {
@@ -93,10 +96,19 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
         _source: {
           excludes: ["embedding", "vector", "_vector", "embeddings"],
         },
+        // multi_match over the text field (weighted) and a known
+        // metadata title field. `best_fields` ranks by the best-matching
+        // single field; `minimum_should_match: 50%` requires roughly half
+        // the query terms — strict enough to filter noise, loose enough
+        // for natural-language questions to find something.
+        // `default_operator: AND` (the first cut) was too strict — a
+        // 5-word question that's slightly off-corpus returned zero hits.
         query: {
-          query_string: {
+          multi_match: {
             query: input.query,
-            default_operator: "AND",
+            fields: ["text_content^2", "metadata.item_name"],
+            type: "best_fields",
+            minimum_should_match: "50%",
           },
         },
       };

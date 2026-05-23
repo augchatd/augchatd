@@ -39,6 +39,14 @@ export interface RagConnector extends CommonConnector {
   cluster: string;
   auth: Record<string, unknown>;
   indexes: string[];
+  /**
+   * Optional natural-language hint about the corpus, used to tell the LLM
+   * which language to phrase its retrieval query in. BM25 is lexical: a
+   * query in PT won't match a corpus in FR without semantic embeddings.
+   * Surfaced in the retrieve tool's description so the LLM picks the
+   * right language. Free-form (e.g. "fr", "French", "fr-CH", "pt-BR + en").
+   */
+  language: string | undefined;
 }
 
 export type Connector = McpConnector | RagConnector;
@@ -96,6 +104,15 @@ function parseEntry(entry: unknown, i: number): Connector {
     const cluster = str(e, "cluster", i);
     const auth = obj(e, "auth", i);
     const indexes = arrStr(e, "indexes", i);
+    const languageRaw = e["language"];
+    const language =
+      languageRaw === undefined
+        ? undefined
+        : typeof languageRaw === "string" && languageRaw.length > 0
+          ? languageRaw
+          : (() => {
+              throw new Error(`connectors[${i}]: field "language" must be a non-empty string when set`);
+            })();
     return {
       type,
       descriptive_id,
@@ -105,6 +122,7 @@ function parseEntry(entry: unknown, i: number): Connector {
       cluster,
       auth,
       indexes,
+      language,
     };
   }
   throw new Error(`connectors[${i}]: unknown type "${type}"`);

@@ -1,0 +1,36 @@
+[
+  {
+    "descriptive_id": "mcp_mock",
+    "name": "Mock MCP (local)",
+    "type": "mcp",
+    "default_active": true,
+    "read_only": true,
+    "url": "http://localhost:9000/mcp",
+    "auth": {}
+  },
+  {
+    "descriptive_id": "mcp_real_example",
+    "name": "Real MCP via custom headers",
+    "type": "mcp",
+    "default_active": false,
+    "read_only": true,
+    "url": "https://your-mcp.example.com/mcp",
+    "auth": {
+      "headers": {
+        "X-MCP-Client-ID": "your-client-id",
+        "X-MCP-Client-Secret": "your-client-secret"
+      }
+    }
+  },
+  {
+    "descriptive_id": "rag_example",
+    "name": "Example OpenSearch KB",
+    "type": "rag",
+    "default_active": false,
+    "backend": "opensearch",
+    "cluster": "https://your-opensearch.example.com:25060",
+    "auth": { "basic": { "username": "doadmin", "password": "your-password" } },
+    "indexes": ["your-index-uuid"],
+    "language": "en"
+  }
+]
