@@ -49,6 +49,14 @@ else
   echo "          (copy local/demo_connectors.json.example to local/demo_connectors.json)"
 fi
 
+# Per-conversation JSONL trace — on by default in local dev so we can
+# replay what the LLM + tools actually did. Override by exporting
+# AUGCHATD_TRACE_DIR=... (or =""  to disable) before running.
+export AUGCHATD_TRACE_DIR="${AUGCHATD_TRACE_DIR-data-trace}"
+if [[ -n "$AUGCHATD_TRACE_DIR" ]]; then
+  echo "augchatd: tracing conversations to $AUGCHATD_TRACE_DIR/"
+fi
+
 # Ensure UI is built. The Hono static-ui handler returns a 503 hint if
 # ui/dist is missing; we'd rather build once and serve the real UI.
 if [[ ! -f ui/dist/index.html ]]; then

@@ -1,6 +1,7 @@
 node_modules/
 bun.lockb
 data/
+data-trace/
 *.log
 .env
 .env.local
