@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 
 export type AugchatdMode = "demo" | "prod";
 
@@ -24,6 +24,13 @@ export interface BootConfig {
   mode: AugchatdMode;
   port: number;
   demo: DemoModeConfig | undefined;
+  /**
+   * Directory where per-conversation JSONL traces are appended. Unset =
+   * tracing disabled (no overhead). Mode-agnostic: works in demo and
+   * prod. Read from AUGCHATD_TRACE_DIR; the directory is created at
+   * boot if absent.
+   */
+  trace_dir: string | undefined;
 }
 
 const DEFAULT_PORT = 8080;
@@ -35,7 +42,20 @@ export function loadBootConfig(): BootConfig {
     mode,
     port: readPort(),
     demo: mode === "demo" ? readDemoConfig() : undefined,
+    trace_dir: readTraceDir(),
   };
+}
+
+function readTraceDir(): string | undefined {
+  const raw = process.env.AUGCHATD_TRACE_DIR;
+  if (!raw) return undefined;
+  try {
+    mkdirSync(raw, { recursive: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`AUGCHATD_TRACE_DIR could not be created at '${raw}': ${msg}`);
+  }
+  return raw;
 }
 
 function readMode(): AugchatdMode {

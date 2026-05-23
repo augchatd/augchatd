@@ -3,10 +3,13 @@ import { createApp } from "./server.ts";
 import { bindDemoSession } from "./session-registry.ts";
 import { initMcpConnectors } from "./mcp.ts";
 import { initRagConnectors } from "./rag.ts";
+import { initTrace } from "./trace.ts";
 
 const DEMO_SESSION_ID = "demo-session";
 
 const config = loadBootConfig();
+
+initTrace(config.trace_dir);
 
 if (config.mode === "demo" && config.demo) {
   const session = bindDemoSession(DEMO_SESSION_ID, config.demo);
@@ -29,6 +32,9 @@ if (config.mode === "demo" && config.demo) {
   console.log(
     `  demo: cold storage=${config.demo.s3_uri ? "S3 configured" : "hot-only"}`,
   );
+}
+if (config.trace_dir) {
+  console.log(`  trace: appending per-conversation JSONL to ${config.trace_dir}`);
 }
 
 export default {

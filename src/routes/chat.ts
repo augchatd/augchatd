@@ -11,8 +11,11 @@ import { llmFor } from "../llm.ts";
 import { toolsForActiveConnectors } from "../mcp.ts";
 import { toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
+import { writeTraceEvent } from "../trace.ts";
 
 interface ChatRequestBody {
+  /** Thread id from the AssistantChatTransport (assistant-ui default). */
+  id?: string;
   messages: UIMessage[];
 }
 
@@ -60,6 +63,32 @@ export async function chatHandler(c: Context): Promise<Response> {
 
   const messages = await convertToModelMessages(body.messages);
 
+  // Conversation id for tracing: prefer the thread id sent by the
+  // AssistantChatTransport; fall back to the first message's id (also
+  // stable per thread); finally synthesize one so a malformed client
+  // still gets a file rather than dropping events.
+  const conversationId =
+    body.id ?? body.messages[0]?.id ?? `unknown-${Date.now()}`;
+
+  writeTraceEvent(conversationId, {
+    type: "request",
+    conversation_id: conversationId,
+    session_id: session.session_id,
+    user_id: session.user_id,
+    model: {
+      provider: session.model.provider,
+      model_id: session.model.model_id,
+    },
+    system_prompt: session.system_prompt,
+    connectors: session.connectors.map((c) => ({
+      descriptive_id: c.descriptive_id,
+      type: c.type,
+      name: c.name,
+      default_active: c.default_active,
+    })),
+    messages: body.messages,
+  });
+
   const uiStream = createUIMessageStream<UIMessage>({
     execute: async ({ writer }) => {
       const result = streamText({
@@ -68,6 +97,40 @@ export async function chatHandler(c: Context): Promise<Response> {
         messages,
         tools: Object.keys(tools).length > 0 ? tools : undefined,
         stopWhen: stepCountIs(MAX_STEPS),
+        onStepFinish: (step) => {
+          writeTraceEvent(conversationId, {
+            type: "step.finish",
+            conversation_id: conversationId,
+            session_id: session.session_id,
+            step_number: step.stepNumber,
+            text: step.text,
+            reasoning_text: step.reasoningText,
+            tool_calls: step.toolCalls,
+            tool_results: step.toolResults,
+            finish_reason: step.finishReason,
+            usage: step.usage,
+            warnings: step.warnings,
+          });
+        },
+        onFinish: (event) => {
+          writeTraceEvent(conversationId, {
+            type: "response.finish",
+            conversation_id: conversationId,
+            session_id: session.session_id,
+            finish_reason: event.finishReason,
+            total_usage: event.totalUsage,
+            step_count: event.steps.length,
+          });
+        },
+        onError: ({ error }) => {
+          writeTraceEvent(conversationId, {
+            type: "error",
+            conversation_id: conversationId,
+            session_id: session.session_id,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        },
       });
 
       writer.merge(result.toUIMessageStream());
