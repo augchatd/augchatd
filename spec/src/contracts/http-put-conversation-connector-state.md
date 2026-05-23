@@ -12,6 +12,17 @@ links:
 
 # Technical contract — `PUT /conversations/:conversation_id/connectors/:descriptive_id`
 
+> [!IMPORTANT] PENDING RECONCILIATION
+> Implemented on branch `trace-conversations` (commit `ac427f6`) with the HTTP
+> surface fully matching this contract (request/response shapes, all status
+> codes including 204/400/404/401, last-write-wins). The single divergence is
+> persistence: state lives in the in-memory conversation-registry, not hot
+> SQLite — so the "survives session re-mints" sentence in **Purpose** below
+> does NOT yet hold across process restarts. The `503` failure mode (hot-write
+> failed) is not emitted today (no disk to fail on). See the parent
+> [contract-connector-toggle](../behavior/contracts/connector-toggle.md) for
+> the consolidated reconciliation block.
+
 ## Purpose
 
 Sets the active state of one connector **for one conversation**. The change is persisted as part of the conversation (hot SQLite, flushed to cold S3 like any other conversation state) so it survives session re-mints.

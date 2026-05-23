@@ -19,6 +19,35 @@ links:
 
 # Contract — Connector toggle (per conversation)
 
+> [!IMPORTANT] PENDING RECONCILIATION
+> **Implemented on branch `trace-conversations` (commit `ac427f6`) with two divergences from this contract:**
+>
+> 1. **Storage is in-memory** (`src/conversation-registry.ts`), not hot SQLite + cold S3. The
+>    `Map<conversation_id, …>` dies on process restart, so the spec's promise
+>    that "a future session loading the same conversation … sees the saved active
+>    states. The user does not have to retoggle." does NOT hold across restarts.
+>    The HTTP contract surface is otherwise complete and identical; the registry
+>    is the swap point when `cap-storage` (hot SQLite) lands.
+>
+> 2. **`POST /conversations` accepts a client-supplied `conversation_id`** (idempotent
+>    on it). The bundled UI passes the assistant-ui-generated thread id rather than
+>    minting a server-side UUID. This matches what the assistant-ui transport
+>    actually does today; the snapshot-on-creation behavior described below is
+>    preserved either way.
+>
+> **Proposed direction (preferred):**
+> - Mark this contract's persistence promises explicitly as "dependent on
+>   `cap-storage`"; the in-memory implementation satisfies the rest.
+> - Add a small note that `POST /conversations` accepts an optional
+>   `conversation_id` body field (idempotent), with the server auto-minting a
+>   UUID when absent. This is a deliberate accommodation for assistant-ui-style
+>   transports that own the thread id client-side.
+> - Storage spec (`contract-storage-hot`) remains the canonical target — when it
+>   lands, swap the conversation-registry backing store and this PENDING block
+>   resolves.
+>
+> No silent rewrite applied — canonical text below is unchanged.
+
 ## Promise
 
 For each conversation in a live session, the browser can:
