@@ -38,7 +38,7 @@ Replace `mcp_servers[]` + `tools.rag` with a single **`connectors[]`** array on 
 
 Each connector entry has these common fields:
 
-- **`descriptive_id`** (string, unique within session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_schooldrive_user_session"`.
+- **`descriptive_id`** (string, unique within session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_acme_user_session"`.
 - **`name`** (string) — human-friendly display label shown by the bundled UI. Example: `"Base de conhecimentos pública"`.
 - **`type`** (enum) — `"mcp"` | `"rag"` (extensible).
 - **`default_active`** (boolean) — initial active state at session start. Some connectors may be provisioned but default off (e.g. a powerful tool that the user opts in to per turn).
