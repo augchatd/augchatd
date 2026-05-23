@@ -2,6 +2,8 @@ import type { Context } from "hono";
 import {
   streamText,
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   stepCountIs,
   type UIMessage,
 } from "ai";
@@ -14,21 +16,26 @@ interface ChatRequestBody {
   messages: UIMessage[];
 }
 
+// Tool-use loop depth. Generous (100) so paginated MCP flows can fetch
+// all slices on their own — augchatd does not nudge the LLM to "answer
+// with partial data" or be lazy about pagination. If the cap genuinely
+// hits, the fallback below makes the truncation visible to the user.
+const MAX_STEPS = 100;
+
 /**
  * POST /chat — chat tool-use loop (partial, per contract-session-chat).
  *
  * Wired today:
- *   - JWT bearer auth (requireSession middleware).
+ *   - JWT bearer auth (requireSession middleware sets `session` on ctx).
  *   - Session's model + key.
- *   - Tools from active MCP-type connectors (default_active=true today;
- *     per-conversation toggling lands with conversation persistence).
- *   - Vercel AI SDK handles the multi-step tool-use loop:
- *     stopWhen: stepCountIs(N) caps depth.
- *
- * Not yet wired:
- *   - Conversation persistence (no conversation_id routing yet).
- *   - RAG-type connectors (no retrieval dispatch yet).
- *   - Read-only mode signaling (no cold flush, no stall).
+ *   - Tools from active MCP-type and RAG-type connectors merged into
+ *     a single tool map.
+ *   - Multi-step tool-use loop capped at MAX_STEPS via
+ *     `stopWhen: stepCountIs(...)`. When the cap hits and the LLM
+ *     hasn't produced a final text message yet, we inject a
+ *     visible fallback into the UI stream so the user sees something
+ *     (instead of a chat that just stops emitting after a flurry of
+ *     tool calls).
  */
 export async function chatHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
@@ -51,16 +58,40 @@ export async function chatHandler(c: Context): Promise<Response> {
     ...toolsForActiveRagConnectors(ragConnectors),
   };
 
-  const result = streamText({
-    model: llmFor(session),
-    system: session.system_prompt,
-    messages: await convertToModelMessages(body.messages),
-    tools: Object.keys(tools).length > 0 ? tools : undefined,
-    // Multi-step tool-use loop: after a tool returns, feed the result
-    // back so the LLM can write a final assistant message. Cap depth
-    // to bound runaway tool-calling.
-    stopWhen: stepCountIs(8),
+  const messages = await convertToModelMessages(body.messages);
+
+  const uiStream = createUIMessageStream<UIMessage>({
+    execute: async ({ writer }) => {
+      const result = streamText({
+        model: llmFor(session),
+        system: session.system_prompt,
+        messages,
+        tools: Object.keys(tools).length > 0 ? tools : undefined,
+        stopWhen: stepCountIs(MAX_STEPS),
+      });
+
+      writer.merge(result.toUIMessageStream());
+
+      // After the model stream completes, inspect why it stopped.
+      // If we hit the step cap mid-tool-loop, emit a fallback text
+      // part — otherwise the user sees a chat that ran a bunch of
+      // tools and produced no message.
+      const finishReason = await result.finishReason;
+      if (finishReason === "tool-calls") {
+        const id = `augchatd-fallback-${Date.now()}`;
+        writer.write({ type: "text-start", id });
+        writer.write({
+          type: "text-delta",
+          id,
+          delta:
+            `\n\n⚠ augchatd: hit the tool-use depth limit (${MAX_STEPS} steps) without a final answer. ` +
+            `The retrieved data above is partial. Try a more specific question, or ask the assistant ` +
+            `to summarize what it has so far.`,
+        });
+        writer.write({ type: "text-end", id });
+      }
+    },
   });
 
-  return result.toUIMessageStreamResponse();
+  return createUIMessageStreamResponse({ stream: uiStream });
 }
