@@ -19,6 +19,16 @@ export interface CommonConnector {
   descriptive_id: string;
   name: string;
   default_active: boolean;
+  /**
+   * Optional free-form description of *what content/data lives behind this
+   * connector*. Surfaced to the LLM:
+   *   - For RAG: prepended to the retrieve tool's description, so the LLM
+   *     knows what the corpus is about without speculative queries.
+   *   - For MCP: prepended to each tool's description as a connector-level
+   *     hint — helps the LLM pick between multiple MCP connectors when
+   *     their per-tool descriptions overlap.
+   */
+  description: string | undefined;
 }
 
 export interface McpConnector extends CommonConnector {
@@ -86,13 +96,14 @@ function parseEntry(entry: unknown, i: number): Connector {
   const descriptive_id = str(e, "descriptive_id", i);
   const name = str(e, "name", i);
   const default_active = bool(e, "default_active", i);
+  const description = optStr(e, "description", i);
   const type = str(e, "type", i);
 
   if (type === "mcp") {
     const url = str(e, "url", i);
     const auth = obj(e, "auth", i);
     const read_only = e["read_only"] === undefined ? true : boolField(e, "read_only", i);
-    return { type, descriptive_id, name, default_active, url, auth, read_only };
+    return { type, descriptive_id, name, default_active, description, url, auth, read_only };
   }
   if (type === "rag") {
     const backend = str(e, "backend", i);
@@ -118,6 +129,7 @@ function parseEntry(entry: unknown, i: number): Connector {
       descriptive_id,
       name,
       default_active,
+      description,
       backend,
       cluster,
       auth,
@@ -145,6 +157,15 @@ function bool(e: Record<string, unknown>, key: string, i: number): boolean {
 }
 
 const boolField = bool;
+
+function optStr(e: Record<string, unknown>, key: string, i: number): string | undefined {
+  const v = e[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || v.length === 0) {
+    throw new Error(`connectors[${i}]: field "${key}" must be a non-empty string when set`);
+  }
+  return v;
+}
 
 function obj(e: Record<string, unknown>, key: string, i: number): Record<string, unknown> {
   const v = e[key];

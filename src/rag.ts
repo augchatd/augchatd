@@ -64,12 +64,15 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
   const langClause = c.language
     ? ` IMPORTANT: this corpus is in ${c.language}. ALWAYS write the query in ${c.language}, translating from the user's language if needed. Lexical search will return zero results if the query language doesn't match the corpus.`
     : "";
+  const corpusClause = c.description
+    ? `\n\nCorpus contents: ${c.description}`
+    : "";
   const retrieveTool = tool({
     description:
       `Retrieve up to top_k passages from the "${c.name}" knowledge base ` +
       `(${c.backend} indexes: ${c.indexes.join(", ")}). Use this whenever ` +
       `you need supporting facts or quotes from this corpus. Input is a ` +
-      `natural-language query.${langClause}`,
+      `natural-language query.${langClause}${corpusClause}`,
     inputSchema: jsonSchema({
       type: "object",
       properties: {

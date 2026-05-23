@@ -69,8 +69,12 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
       continue;
     }
     const namespaced = `${c.descriptive_id}__${t.name}`;
+    const baseDesc = t.description ?? `MCP tool ${t.name} (via ${c.descriptive_id})`;
+    const description = c.description
+      ? `[${c.name}: ${c.description}]\n\n${baseDesc}`
+      : baseDesc;
     tools[namespaced] = tool({
-      description: t.description ?? `MCP tool ${t.name} (via ${c.descriptive_id})`,
+      description,
       inputSchema: jsonSchema(t.inputSchema as object),
       execute: async (input) => {
         const result = (await client.callTool({
