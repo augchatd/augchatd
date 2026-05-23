@@ -1,123 +1,35 @@
 import type { Connector } from "./connectors.ts";
 import type { SessionRecord } from "./session-registry.ts";
+import { HotWriteError, storageFor } from "./storage.ts";
 
 /**
- * Per-conversation connector active state.
+ * Per-conversation connector active state, model override, and message
+ * history — persisted in the hot SQLite DB per (tenant, user). Backs
+ * the contract surfaces of contract-connector-toggle, the model picker
+ * (cap-session-mgmt + the picker PENDING), and the messages history
+ * for replay/audit.
  *
- * Implements the contract surface of [contract-connector-toggle] and the
- * two technical contracts (GET /conversations/:cid/connectors,
- * PUT /conversations/:cid/connectors/:did) — see spec/.
+ * What this module owns
+ *   - createConversation       — first-observation snapshot of default_active
+ *                                for every in-scope connector
+ *   - getConversation          — lookup-by-id within a session's tenant/user
+ *   - listConnectorsForConversation — `GET /conversations/:cid/connectors`
+ *   - setConnectorActive       — `PUT /conversations/:cid/connectors/:did`
+ *   - snapshotActiveMap        — chat handler reads this at turn start
+ *   - setConversationModel     — `PUT /conversations/:cid/model`
+ *   - resolveModelId           — chat handler reads this at turn start
+ *   - upsertMessage / listMessages — message history
  *
- * PERSISTENCE — divergence from spec
- * ----------------------------------
- * The spec requires the saved active state to live in hot SQLite +
- * cold S3 so it survives session re-mint. Storage layer is not yet
- * implemented. This registry is **in-memory**: dies on process restart.
- * The HTTP contract surface is otherwise identical, so swapping the
- * backing store is a localized change.
+ * The "record" handed back is intentionally lightweight (just an id).
+ * State lives in the DB; methods re-query as needed. There is no cache
+ * (contract-storage-hot: "canonical row, no per-session cache").
  *
- * CAPTURE-ON-FIRST-OBSERVATION
- * ----------------------------
- * Per the spec, a conversation's saved flag for a connector is
- * snapshotted from `default_active` the FIRST time the connector is
- * observed in the conversation's purview (creation or first
- * GET/chat). After capture, only an explicit PUT mutates it. New
- * connectors added to the session after creation are captured on
- * their first GET; removed connectors keep their saved row but are
- * filtered out of GET responses.
+ * Write failures throw HotWriteError; the route layer maps them to
+ * `503 X-Augchatd-Reason: hot-write-failed`.
  */
 
 export interface ConversationRecord {
   conversation_id: string;
-  session_id: string;
-  /** descriptive_id → saved active flag. */
-  active_map: Map<string, boolean>;
-  /**
-   * Optional per-conversation override of the session's default model_id.
-   * Set via PUT /conversations/:cid/model. When unset, the chat handler
-   * falls back to session.model.model_id.
-   */
-  model_id_override: string | undefined;
-}
-
-const registry = new Map<string, ConversationRecord>();
-
-/**
- * Create a new conversation record bound to `session`. If `requestedId`
- * is provided (e.g. the assistant-ui thread id from the client), use it;
- * otherwise mint a UUID. Snapshots `default_active` for every connector
- * currently in scope.
- *
- * Idempotent on requestedId: a second call for an existing id returns
- * the existing record (no re-snapshot, so subsequent toggles are
- * preserved). Callers that need "create fresh" should pass a new id.
- */
-export function createConversation(
-  session: SessionRecord,
-  requestedId: string | undefined,
-): ConversationRecord {
-  const conversation_id = requestedId ?? crypto.randomUUID();
-  const existing = registry.get(conversation_id);
-  if (existing) {
-    if (existing.session_id !== session.session_id) {
-      throw new Error(
-        `conversation ${conversation_id} belongs to a different session`,
-      );
-    }
-    return existing;
-  }
-  const active_map = new Map<string, boolean>();
-  for (const c of session.connectors) {
-    active_map.set(c.descriptive_id, c.default_active);
-  }
-  const record: ConversationRecord = {
-    conversation_id,
-    session_id: session.session_id,
-    active_map,
-    model_id_override: undefined,
-  };
-  registry.set(conversation_id, record);
-  return record;
-}
-
-export function setConversationModel(
-  record: ConversationRecord,
-  model_id: string,
-): void {
-  record.model_id_override = model_id;
-}
-
-export function resolveModelId(
-  record: ConversationRecord,
-  session: SessionRecord,
-): string {
-  return record.model_id_override ?? session.model.model_id;
-}
-
-export function getConversation(
-  conversation_id: string,
-  session_id: string,
-): ConversationRecord | undefined {
-  const r = registry.get(conversation_id);
-  if (!r) return undefined;
-  if (r.session_id !== session_id) return undefined; // tenant scoping
-  return r;
-}
-
-/**
- * Per the spec: capture-on-first-observation. If the connector is in the
- * session's scope but not yet in the saved active_map, snapshot
- * `default_active` now. Mutates the record in place.
- */
-function captureNewlyInScope(
-  record: ConversationRecord,
-  session: SessionRecord,
-): void {
-  for (const c of session.connectors) {
-    if (!record.active_map.has(c.descriptive_id)) {
-      record.active_map.set(c.descriptive_id, c.default_active);
-    }
-  }
 }
 
 export interface ConnectorListItem {
@@ -127,29 +39,97 @@ export interface ConnectorListItem {
   active: boolean;
 }
 
-/**
- * List connectors visible to this conversation, with their saved active
- * state. Captures new-in-scope connectors as a side effect. Excludes
- * connectors no longer in the session's resolved scope.
- *
- * Order follows the session's connectors[] payload.
- */
+export type SetActiveResult =
+  | { ok: true }
+  | { ok: false; reason: "connector_not_in_scope" };
+
+export interface StoredMessage {
+  message_id: string;
+  ordinal: number;
+  role: string;
+  parts: unknown;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function snapshotDefaultsTx(
+  db: ReturnType<typeof storageFor>,
+  cid: string,
+  session: SessionRecord,
+): void {
+  const now = nowIso();
+  // Insert only for connectors not yet captured (idempotent on cid+did).
+  const exists = db.prepare(
+    "SELECT 1 FROM connector_state WHERE conversation_id = ? AND descriptive_id = ?",
+  );
+  const insert = db.prepare(
+    "INSERT INTO connector_state (conversation_id, descriptive_id, active, updated_at) VALUES (?, ?, ?, ?)",
+  );
+  for (const c of session.connectors) {
+    if (exists.get(cid, c.descriptive_id)) continue;
+    insert.run(cid, c.descriptive_id, c.default_active ? 1 : 0, now);
+  }
+}
+
+export function createConversation(
+  session: SessionRecord,
+  requestedId: string | undefined,
+): ConversationRecord {
+  const cid = requestedId ?? crypto.randomUUID();
+  const db = storageFor(session);
+  const now = nowIso();
+  try {
+    db.transaction(() => {
+      const existing = db
+        .prepare("SELECT 1 FROM conversation WHERE conversation_id = ?")
+        .get(cid);
+      if (!existing) {
+        db.prepare(
+          "INSERT INTO conversation (conversation_id, session_id, created_at) VALUES (?, ?, ?)",
+        ).run(cid, session.session_id, now);
+      }
+      // Capture-on-first-observation, idempotent for already-captured rows.
+      snapshotDefaultsTx(db, cid, session);
+    })();
+  } catch (err) {
+    if (err instanceof HotWriteError) throw err;
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+  return { conversation_id: cid };
+}
+
+export function getConversation(
+  conversation_id: string,
+  session: SessionRecord,
+): ConversationRecord | undefined {
+  const db = storageFor(session);
+  const row = db
+    .prepare("SELECT conversation_id FROM conversation WHERE conversation_id = ?")
+    .get(conversation_id) as { conversation_id: string } | undefined;
+  if (!row) return undefined;
+  return { conversation_id: row.conversation_id };
+}
+
 export function listConnectorsForConversation(
   record: ConversationRecord,
   session: SessionRecord,
 ): ConnectorListItem[] {
-  captureNewlyInScope(record, session);
+  // Capture any new-in-scope connectors first (sliding scope).
+  try {
+    snapshotDefaultsTx(storageFor(session), record.conversation_id, session);
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+  const map = readActiveMap(record.conversation_id, session);
   return session.connectors.map((c: Connector) => ({
     descriptive_id: c.descriptive_id,
     name: c.name,
     type: c.type,
-    active: record.active_map.get(c.descriptive_id) ?? c.default_active,
+    active: map.get(c.descriptive_id) ?? c.default_active,
   }));
 }
-
-export type SetActiveResult =
-  | { ok: true }
-  | { ok: false; reason: "connector_not_in_scope" };
 
 export function setConnectorActive(
   record: ConversationRecord,
@@ -159,23 +139,154 @@ export function setConnectorActive(
 ): SetActiveResult {
   const c = session.connectors.find((x) => x.descriptive_id === descriptive_id);
   if (!c) return { ok: false, reason: "connector_not_in_scope" };
-  record.active_map.set(descriptive_id, active);
+  const db = storageFor(session);
+  try {
+    db.prepare(
+      `INSERT INTO connector_state (conversation_id, descriptive_id, active, updated_at)
+         VALUES (?, ?, ?, ?)
+       ON CONFLICT(conversation_id, descriptive_id) DO UPDATE SET
+         active     = excluded.active,
+         updated_at = excluded.updated_at`,
+    ).run(record.conversation_id, descriptive_id, active ? 1 : 0, nowIso());
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
   return { ok: true };
 }
 
-/**
- * Snapshot of active flags for a chat turn. Captures any new-in-scope
- * connectors first (per spec: "captured at the start of each chat
- * turn"). Returns descriptive_id → active.
- */
+function readActiveMap(
+  conversation_id: string,
+  session: SessionRecord,
+): Map<string, boolean> {
+  const db = storageFor(session);
+  const rows = db
+    .prepare(
+      "SELECT descriptive_id, active FROM connector_state WHERE conversation_id = ?",
+    )
+    .all(conversation_id) as Array<{ descriptive_id: string; active: number }>;
+  const out = new Map<string, boolean>();
+  for (const r of rows) out.set(r.descriptive_id, r.active === 1);
+  return out;
+}
+
 export function snapshotActiveMap(
   record: ConversationRecord,
   session: SessionRecord,
 ): Map<string, boolean> {
-  captureNewlyInScope(record, session);
+  // Capture-on-first-observation for any newly-in-scope connectors so
+  // chat-turn sees them with their default_active.
+  try {
+    snapshotDefaultsTx(storageFor(session), record.conversation_id, session);
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+  const saved = readActiveMap(record.conversation_id, session);
   const out = new Map<string, boolean>();
   for (const c of session.connectors) {
-    out.set(c.descriptive_id, record.active_map.get(c.descriptive_id) ?? c.default_active);
+    out.set(c.descriptive_id, saved.get(c.descriptive_id) ?? c.default_active);
   }
   return out;
+}
+
+export function setConversationModel(
+  record: ConversationRecord,
+  session: SessionRecord,
+  model_id: string,
+): void {
+  const db = storageFor(session);
+  try {
+    db.prepare(
+      "UPDATE conversation SET model_id_override = ? WHERE conversation_id = ?",
+    ).run(model_id, record.conversation_id);
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export function resolveModelId(
+  record: ConversationRecord,
+  session: SessionRecord,
+): string {
+  const db = storageFor(session);
+  const row = db
+    .prepare(
+      "SELECT model_id_override FROM conversation WHERE conversation_id = ?",
+    )
+    .get(record.conversation_id) as
+    | { model_id_override: string | null }
+    | undefined;
+  return row?.model_id_override ?? session.model.model_id;
+}
+
+/**
+ * Upsert all messages of a thread (idempotent by message_id). Called at
+ * the end of each chat turn from chat.ts's createUIMessageStream
+ * onFinish — the messages array is the FULL updated thread.
+ */
+export function upsertMessages(
+  record: ConversationRecord,
+  session: SessionRecord,
+  messages: Array<{ id: string; role: string; parts: unknown }>,
+): void {
+  const db = storageFor(session);
+  const now = nowIso();
+  try {
+    db.transaction(() => {
+      const stmt = db.prepare(
+        `INSERT INTO message (conversation_id, message_id, ordinal, role, parts_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(conversation_id, message_id) DO UPDATE SET
+           ordinal    = excluded.ordinal,
+           role       = excluded.role,
+           parts_json = excluded.parts_json,
+           updated_at = excluded.updated_at`,
+      );
+      messages.forEach((m, i) => {
+        stmt.run(
+          record.conversation_id,
+          m.id,
+          i,
+          m.role,
+          JSON.stringify(m.parts ?? []),
+          now,
+        );
+      });
+    })();
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export function listMessages(
+  record: ConversationRecord,
+  session: SessionRecord,
+): StoredMessage[] {
+  const db = storageFor(session);
+  const rows = db
+    .prepare(
+      `SELECT message_id, ordinal, role, parts_json
+         FROM message
+        WHERE conversation_id = ?
+        ORDER BY ordinal ASC, message_id ASC`,
+    )
+    .all(record.conversation_id) as Array<{
+    message_id: string;
+    ordinal: number;
+    role: string;
+    parts_json: string;
+  }>;
+  return rows.map((r) => ({
+    message_id: r.message_id,
+    ordinal: r.ordinal,
+    role: r.role,
+    parts: safeJsonParse(r.parts_json),
+  }));
+}
+
+function safeJsonParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return [];
+  }
 }

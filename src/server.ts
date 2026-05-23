@@ -5,6 +5,7 @@ import { chatHandler } from "./routes/chat.ts";
 import {
   createConversationHandler,
   listConversationConnectorsHandler,
+  listConversationMessagesHandler,
   setConversationConnectorStateHandler,
   setConversationModelHandler,
 } from "./routes/conversations.ts";
@@ -55,6 +56,11 @@ export function createApp(config: BootConfig): Hono {
       setConversationModelHandler,
     );
     app.get("/session/models", requireSession, listSessionModelsHandler);
+    app.get(
+      "/conversations/:conversation_id/messages",
+      requireSession,
+      listConversationMessagesHandler,
+    );
   }
 
   // UI serving is mode-agnostic; in prod the UI handshake gets the JWT

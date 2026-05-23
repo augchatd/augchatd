@@ -4,26 +4,41 @@ import {
   createConversation,
   getConversation,
   listConnectorsForConversation,
+  listMessages,
   setConnectorActive,
   setConversationModel,
 } from "../conversation-registry.ts";
+import { HotWriteError } from "../storage.ts";
 import { ensureModelsCached } from "./models.ts";
 
 /**
- * Conversation + per-conversation connector toggle endpoints.
+ * Conversation + per-conversation toggle/model/messages endpoints.
  *
- * Spec: contract-connector-toggle + the two technical contracts
- * (http-get-conversation-connectors, http-put-conversation-connector-state).
- *
- * Storage is in-memory for now (see conversation-registry.ts header).
+ * Backed by hot SQLite (see src/storage.ts, contract-storage-hot).
+ * Write failures surface as `503 X-Augchatd-Reason: hot-write-failed`,
+ * per spec.
  */
+
+function hotWriteResponse(c: Context, err: HotWriteError): Response {
+  c.header("X-Augchatd-Reason", "hot-write-failed");
+  return c.json({ error: "hot_write_failed", detail: err.detail }, 503);
+}
+
+function tryHotWrite<T>(c: Context, fn: () => T): T | Response {
+  try {
+    return fn();
+  } catch (err) {
+    if (err instanceof HotWriteError) return hotWriteResponse(c, err);
+    throw err;
+  }
+}
 
 /**
  * POST /conversations
  *
- * Body (optional): `{ conversation_id?: string }`. If supplied (e.g. the
- * assistant-ui-generated thread id), the registry binds to that id;
- * otherwise a UUID is minted. Idempotent on `conversation_id`.
+ * Body (optional): `{ conversation_id?: string }`. If supplied, the
+ * registry binds to that id; otherwise a UUID is minted. Idempotent on
+ * `conversation_id`.
  *
  * Returns `201 { conversation_id }`.
  */
@@ -31,7 +46,6 @@ export async function createConversationHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
 
   let requestedId: string | undefined;
-  // Body is optional. Tolerate empty or absent body.
   const ct = c.req.header("content-type") ?? "";
   if (ct.includes("application/json")) {
     try {
@@ -43,48 +57,35 @@ export async function createConversationHandler(c: Context): Promise<Response> {
         requestedId = body.conversation_id;
       }
     } catch {
-      // empty body w/ json content-type — treat as no requestedId
+      /* empty body w/ json content-type — treat as no requestedId */
     }
   }
 
-  let record;
-  try {
-    record = createConversation(session, requestedId);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ error: "conflict", detail: msg }, 409);
-  }
-  return c.json({ conversation_id: record.conversation_id }, 201);
+  const result = tryHotWrite(c, () => createConversation(session, requestedId));
+  if (result instanceof Response) return result;
+  return c.json({ conversation_id: result.conversation_id }, 201);
 }
 
-/**
- * GET /conversations/:conversation_id/connectors
- *
- * Returns `[{ descriptive_id, name, type, active }]` per spec. Captures
- * new-in-scope connectors as a side effect of the read.
- */
+/** GET /conversations/:conversation_id/connectors */
 export async function listConversationConnectorsHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
   const cid = c.req.param("conversation_id");
   if (!cid) return c.json({ error: "missing_conversation_id" }, 400);
 
-  // Auto-create on first observation (same rule as the chat handler).
-  // The bundled UI's ConnectorsMenu opens the popover before the user has
-  // chatted, so we need to be willing to create the record here too.
-  const record =
-    getConversation(cid, session.session_id) ??
-    createConversation(session, cid);
+  const recordOrRes = tryHotWrite(
+    c,
+    () => getConversation(cid, session) ?? createConversation(session, cid),
+  );
+  if (recordOrRes instanceof Response) return recordOrRes;
 
-  const items = listConnectorsForConversation(record, session);
-  return c.json(items);
+  const itemsOrRes = tryHotWrite(c, () =>
+    listConnectorsForConversation(recordOrRes, session),
+  );
+  if (itemsOrRes instanceof Response) return itemsOrRes;
+  return c.json(itemsOrRes);
 }
 
-/**
- * PUT /conversations/:conversation_id/connectors/:descriptive_id
- *
- * Body: `{ active: boolean }`. Extra fields rejected (400). Returns 204
- * on success; 404 if cid unknown or did not in session scope.
- */
+/** PUT /conversations/:conversation_id/connectors/:descriptive_id */
 export async function setConversationConnectorStateHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
   const cid = c.req.param("conversation_id");
@@ -109,22 +110,22 @@ export async function setConversationConnectorStateHandler(c: Context): Promise<
     return c.json({ error: "active_must_be_boolean" }, 400);
   }
 
-  const record =
-    getConversation(cid, session.session_id) ??
-    createConversation(session, cid);
+  const recordOrRes = tryHotWrite(
+    c,
+    () => getConversation(cid, session) ?? createConversation(session, cid),
+  );
+  if (recordOrRes instanceof Response) return recordOrRes;
 
-  const res = setConnectorActive(record, session, did, active);
-  if (!res.ok) return c.json({ error: res.reason }, 404);
+  const setOrRes = tryHotWrite(c, () =>
+    setConnectorActive(recordOrRes, session, did, active),
+  );
+  if (setOrRes instanceof Response) return setOrRes;
+  if (!setOrRes.ok) return c.json({ error: setOrRes.reason }, 404);
 
   return new Response(null, { status: 204 });
 }
 
-/**
- * PUT /conversations/:conversation_id/model
- *
- * Body: `{ model_id: string }`. Validates the id against the provider's
- * cached models list. 400 if unknown, 404 if cid unknown, 204 on success.
- */
+/** PUT /conversations/:conversation_id/model */
 export async function setConversationModelHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
   const cid = c.req.param("conversation_id");
@@ -148,9 +149,11 @@ export async function setConversationModelHandler(c: Context): Promise<Response>
     return c.json({ error: "model_id_must_be_non_empty_string" }, 400);
   }
 
-  const record =
-    getConversation(cid, session.session_id) ??
-    createConversation(session, cid);
+  const recordOrRes = tryHotWrite(
+    c,
+    () => getConversation(cid, session) ?? createConversation(session, cid),
+  );
+  if (recordOrRes instanceof Response) return recordOrRes;
 
   let known;
   try {
@@ -162,6 +165,33 @@ export async function setConversationModelHandler(c: Context): Promise<Response>
   }
   if (!known) return c.json({ error: "unknown_model_id" }, 400);
 
-  setConversationModel(record, model_id);
+  const setOrRes = tryHotWrite(c, () =>
+    setConversationModel(recordOrRes, session, model_id),
+  );
+  if (setOrRes instanceof Response) return setOrRes;
   return new Response(null, { status: 204 });
+}
+
+/**
+ * GET /conversations/:conversation_id/messages
+ *
+ * Returns the stored UI message history (assistant-ui-shaped parts).
+ * 404 if cid unknown for this session's user. Persisted on each chat
+ * turn (see chat.ts onFinish).
+ *
+ * The bundled UI does not consume this endpoint yet — assistant-ui's
+ * runtime keeps thread state in-memory and a hard reload loses it.
+ * Hydrating from this endpoint is a follow-up (separate ergonomic
+ * work, no spec change needed).
+ */
+export async function listConversationMessagesHandler(c: Context): Promise<Response> {
+  const session = c.get("session") as SessionRecord;
+  const cid = c.req.param("conversation_id");
+  if (!cid) return c.json({ error: "missing_conversation_id" }, 400);
+
+  const record = getConversation(cid, session);
+  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+
+  const items = listMessages(record, session);
+  return c.json({ messages: items });
 }

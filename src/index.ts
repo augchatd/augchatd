@@ -4,6 +4,7 @@ import { bindDemoSession } from "./session-registry.ts";
 import { initMcpConnectors } from "./mcp.ts";
 import { initRagConnectors } from "./rag.ts";
 import { initTrace } from "./trace.ts";
+import { initStorageForDemo } from "./storage.ts";
 
 const DEMO_SESSION_ID = "demo-session";
 
@@ -12,6 +13,9 @@ const config = loadBootConfig();
 initTrace(config.trace_dir);
 
 if (config.mode === "demo" && config.demo) {
+  // Open hot SQLite for the demo (tenant, user) before the first
+  // conversation/chat request — avoids first-request latency spike.
+  initStorageForDemo();
   const session = bindDemoSession(DEMO_SESSION_ID, config.demo);
   const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
   const ragConnectors = session.connectors.filter((c) => c.type === "rag");

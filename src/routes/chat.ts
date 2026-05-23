@@ -12,7 +12,13 @@ import { toolsForActiveConnectors } from "../mcp.ts";
 import { consumeRagHits, toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
-import { createConversation, getConversation, resolveModelId, snapshotActiveMap } from "../conversation-registry.ts";
+import {
+  createConversation,
+  getConversation,
+  resolveModelId,
+  snapshotActiveMap,
+  upsertMessages,
+} from "../conversation-registry.ts";
 
 interface ChatRequestBody {
   /**
@@ -62,16 +68,11 @@ export async function chatHandler(c: Context): Promise<Response> {
   }
 
   const conversationId = body.id;
-  // Auto-create on first observation if not registered. Keeps the chat
-  // path resilient to two real-world cases:
-  //   1. A server restart that zeroed the in-memory registry, while the
-  //      browser still holds the old conversation_id in localStorage.
-  //   2. Clients (or tests) that POST /chat directly without first
-  //      POSTing /conversations.
-  // The snapshot-default_active-on-first-observation rule from
-  // contract-connector-toggle is preserved (createConversation does it).
+  // Auto-create on first observation. The capture-on-first-observation
+  // rule from contract-connector-toggle is preserved by createConversation
+  // (it snapshots default_active for each in-scope connector).
   const conversation =
-    getConversation(conversationId, session.session_id) ??
+    getConversation(conversationId, session) ??
     createConversation(session, conversationId);
 
   // Snapshot at the start of the turn — per contract-session-chat:
@@ -111,6 +112,26 @@ export async function chatHandler(c: Context): Promise<Response> {
   });
 
   const uiStream = createUIMessageStream<UIMessage>({
+    // Passing originalMessages so onFinish.messages returns the FULL
+    // updated thread (history + new assistant response), not just the
+    // new response — needed for hot-storage persistence below.
+    originalMessages: body.messages,
+    onFinish: ({ messages }) => {
+      // Persist the full updated thread to hot storage (idempotent
+      // upsert keyed by message_id). Aborted streams still leave the
+      // partial assistant message in `messages` — we store it; replay
+      // sees it as-is, which is the right behavior for audit.
+      try {
+        upsertMessages(
+          conversation,
+          session,
+          messages.map((m) => ({ id: m.id, role: m.role, parts: m.parts })),
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`chat: upsertMessages failed for ${conversationId}: ${msg}`);
+      }
+    },
     execute: async ({ writer }) => {
       const result = streamText({
         model: llmFor(session, modelId),

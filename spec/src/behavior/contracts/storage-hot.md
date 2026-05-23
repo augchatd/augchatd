@@ -19,6 +19,36 @@ links:
 
 # Contract — Hot storage (embedded SQLite, one DB per (tenant, user))
 
+> [!NOTE] Implementation status (partial)
+> Implemented on branch `trace-conversations` for the demo path:
+>
+> - Layout `data/<tenantId>/<userId>.sqlite` with `bun:sqlite`
+>   (`PRAGMA journal_mode = WAL`).
+> - Schema covers `conversation` (id, session_id, model_id_override),
+>   `connector_state` (the canonical per-conversation active map), and
+>   `message` (UIMessage history, parts as JSON).
+> - Writes are atomic; failures throw `HotWriteError` and the chat /
+>   connectors / model handlers surface them as `503
+>   X-Augchatd-Reason: hot-write-failed` per spec.
+> - `data/` is gitignored.
+>
+> **Still PENDING:**
+>
+> - **Flush to cold S3** ([contract-storage-flush](storage-flush.md)) — not implemented.
+> - **Multi-session file lifecycle** — the demo runs one process with one
+>   session, so file-removal-after-all-sessions-end is not exercised.
+>   Will land with prod `POST /sessions` + session bookkeeping.
+> - **Production routing** (lazy-open per session for arbitrary tenants/users)
+>   — the demo opens one DB at boot and reuses it. The `openHotDb` helper
+>   already keys by `(tenant, user)`; prod just needs to call it on session
+>   bind instead of at boot.
+> - **UI-side message hydration on page reload** — `GET /conversations/:cid/messages`
+>   exists and is correct, but the bundled UI's assistant-ui runtime
+>   doesn't consume it yet. Until then, a hard reload loses the visible
+>   message history even though the server has it.
+>
+> Status stays `proposed` (no test-pointers yet; partial implementation).
+
 ## Promise
 
 While any session for a given (tenant, user) is live, that user's conversation state lives in an **internal SQLite database** managed by augchatd, using Bun's embedded SQLite.

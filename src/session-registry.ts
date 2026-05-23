@@ -9,6 +9,12 @@ import { parseConnectors, type Connector } from "./connectors.ts";
 
 export interface SessionRecord {
   session_id: string;
+  /**
+   * Tenant the session belongs to (per constraint-tenant-isolation +
+   * contract-storage-hot's `data/<tenantId>/<userId>.sqlite` layout).
+   * In demo mode: `"demo"`.
+   */
+  tenant_id: string;
   user_id: string;
   system_prompt: string;
   model: {
@@ -37,7 +43,8 @@ export function bindDemoSession(
 ): SessionRecord {
   const record: SessionRecord = {
     session_id: sessionId,
-    user_id: "demo-user",
+    tenant_id: "demo",
+    user_id: "demo",
     system_prompt: config.system_prompt,
     model: config.model,
     s3_uri: config.s3_uri,
