@@ -12,7 +12,7 @@ import {
   useChatRuntime,
 } from "@assistant-ui/react-ai-sdk";
 import { MarkdownText } from "./Markdown.tsx";
-import { ToolCallBlock } from "./blocks/ToolCallBlock.tsx";
+import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
 // CitationsPanel temporarily removed — the useThread selector returned a
 // new array each render, triggering React error #185 (max update depth).
 // Reintroduce with the imperative useThreadRuntime + subscribe pattern
@@ -207,6 +207,7 @@ function AssistantMessage() {
             Image: ImagePart,
             Reasoning: ReasoningPart,
             tools: { Fallback: ToolCallBlock },
+            ToolGroup,
           }}
         />
       </div>

@@ -1,17 +1,21 @@
+import { Children, type PropsWithChildren } from "react";
+
 /**
- * Renders a tool-call part (the LLM's tool invocation) as an inline,
- * collapsible block within the assistant message. Plugged into
- * MessagePrimitive.Parts via `tools: { Fallback: ToolCallBlock }`.
+ * Tool-call rendering, two-tier collapse:
  *
- * Layout:
- *   ┌─────────────────────────────────────────────────────────┐
- *   │ 🔧  echo            (mcp_mock)            Done          │
- *   │     ▸ Arguments     { "text": "hi" }                    │
- *   │     ▸ Result        "hi"                                │
- *   └─────────────────────────────────────────────────────────┘
+ * 1. `ToolGroup` wraps N consecutive tool calls.
+ *    - N === 1 → transparent passthrough (no group UI; the single pill
+ *      stands on its own).
+ *    - N >= 2 → `<details>` collapsible: summary "🔧 3 tool calls" plus
+ *      the rolled-up status of the group; expanded shows each child
+ *      pill stacked.
  *
- * Tool names in augchatd are namespaced `<descriptive_id>__<tool>` to
- * avoid collisions across MCP connectors; we split for display.
+ * 2. `ToolCallBlock` is the per-call pill.
+ *    Default state: a single line — `🔧 echo (mcp_mock) · Done`.
+ *    Click expands: arguments + result.
+ *
+ * Two clicks to drill from a many-call message into the JSON of one
+ * specific call. Quiet by default; full detail on demand.
  */
 
 interface ToolCallBlockProps {
@@ -26,57 +30,82 @@ interface ToolCallBlockProps {
 export function ToolCallBlock(props: ToolCallBlockProps) {
   const { connector, tool } = splitToolName(props.toolName);
   const hasResult = props.result !== undefined;
-  const status: "running" | "error" | "done" = props.isError
-    ? "error"
-    : hasResult
-      ? "done"
-      : "running";
+  const status: Status = props.isError ? "error" : hasResult ? "done" : "running";
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-border bg-bg-base">
-      <div className="flex items-center justify-between border-b border-border bg-bg-soft px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-2">
+    <details className="my-1 rounded border border-border bg-bg-base [&[open]>summary]:border-b [&[open]>summary]:border-border">
+      <summary className="flex cursor-pointer items-center justify-between px-2.5 py-1 text-[12px] font-mono hover:bg-bg-soft">
+        <span className="flex items-center gap-1.5">
           <span aria-hidden>🔧</span>
-          <span className="font-mono font-semibold">{tool}</span>
-          {connector && (
-            <span className="rounded bg-bg-mid px-1.5 py-0.5 text-fg-muted">
-              {connector}
-            </span>
-          )}
-        </div>
-        <StatusBadge status={status} />
-      </div>
-      <details className="border-b border-border last:border-b-0">
-        <summary className="cursor-pointer px-3 py-1.5 text-xs text-fg-muted hover:text-fg-base">
+          <span>{tool}</span>
+          {connector && <span className="text-fg-muted">({connector})</span>}
+        </span>
+        <StatusDot status={status} />
+      </summary>
+      <div className="px-2.5 py-2 text-[12px]">
+        <div className="mb-0.5 font-mono uppercase tracking-wider text-[10px] text-fg-muted">
           Arguments
-        </summary>
-        <pre className="overflow-x-auto px-3 pb-2 font-mono text-[0.85em] text-fg-base">
+        </div>
+        <pre className="mb-2 overflow-x-auto font-mono text-[11px] text-fg-base">
           {formatJson(props.args ?? safeJsonParse(props.argsText))}
         </pre>
-      </details>
-      {hasResult && (
-        <details open className="last:border-b-0">
-          <summary className="cursor-pointer px-3 py-1.5 text-xs text-fg-muted hover:text-fg-base">
-            Result
-          </summary>
-          <pre className="overflow-x-auto px-3 pb-2 font-mono text-[0.85em] text-fg-base">
-            {formatResult(props.result)}
-          </pre>
-        </details>
-      )}
-    </div>
+        {hasResult && (
+          <>
+            <div className="mb-0.5 font-mono uppercase tracking-wider text-[10px] text-fg-muted">
+              Result
+            </div>
+            <pre className="overflow-x-auto font-mono text-[11px] text-fg-base">
+              {formatResult(props.result)}
+            </pre>
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
-function StatusBadge({ status }: { status: "running" | "error" | "done" }) {
-  const map = {
-    running: { label: "Running…", cls: "text-fg-muted" },
-    error: { label: "Error", cls: "text-warn-fg" },
-    done: { label: "Done", cls: "text-fg-base" },
-  } as const;
+/**
+ * Wraps consecutive tool calls.
+ *
+ * For a single call, renders the child pill directly so the user sees
+ * just `🔧 toolName · Done` inline. For 2+ calls, wraps in one
+ * collapsible: `🔧 N tool calls` with the children stacked inside.
+ */
+export function ToolGroup({
+  children,
+}: PropsWithChildren<{ startIndex: number; endIndex: number }>) {
+  const count = Children.count(children);
+  if (count <= 1) return <>{children}</>;
   return (
-    <span className={`font-mono uppercase tracking-wider ${map[status].cls}`}>
-      {map[status].label}
+    <details className="my-2 rounded border border-border bg-bg-soft">
+      <summary className="flex cursor-pointer items-center justify-between px-2.5 py-1.5 text-[12px] hover:bg-bg-mid">
+        <span className="flex items-center gap-1.5 font-mono">
+          <span aria-hidden>🔧</span>
+          <span>{count} tool calls</span>
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-fg-muted">
+          tap to expand
+        </span>
+      </summary>
+      <div className="space-y-1 border-t border-border px-2.5 py-2">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+type Status = "running" | "error" | "done";
+
+function StatusDot({ status }: { status: Status }) {
+  const cls = {
+    running: "bg-fg-muted animate-pulse",
+    error: "bg-warn-fg",
+    done: "bg-accent",
+  }[status];
+  return (
+    <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-fg-muted">
+      {status === "done" ? "Done" : status === "error" ? "Error" : "Running"}
+      <span className={`h-1.5 w-1.5 rounded-full ${cls}`} />
     </span>
   );
 }
