@@ -179,8 +179,23 @@ async function resolveBootConversation(jwt: string): Promise<BootState> {
 async function fetchDemoJwt(): Promise<string> {
   const r = await fetch("/demo/jwt");
   if (!r.ok) throw new Error(`/demo/jwt HTTP ${r.status}`);
-  const j = (await r.json()) as { jwt: string };
+  const j = (await r.json()) as { jwt: string; theme?: "light" | "dark" };
+  applyTheme(j.theme);
   return j.jwt;
+}
+
+/**
+ * Apply the session's theme to the document root. Default (`light`,
+ * absent) leaves no attribute — the `:root` CSS vars in index.css are
+ * the light palette. `dark` sets `data-theme="dark"`, which overrides
+ * the CSS vars to the dark palette.
+ */
+function applyTheme(theme: "light" | "dark" | undefined): void {
+  if (theme === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
 }
 
 function ChatRoom({

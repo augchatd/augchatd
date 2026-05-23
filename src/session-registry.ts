@@ -1,4 +1,4 @@
-import type { DemoModeConfig } from "./env.ts";
+import type { DemoModeConfig, UiTheme } from "./env.ts";
 import { parseConnectors, type Connector } from "./connectors.ts";
 
 /**
@@ -25,6 +25,8 @@ export interface SessionRecord {
   s3_uri: string | undefined;
   /** Typed connectors[]; empty if the session didn't declare any. */
   connectors: Connector[];
+  /** UI color scheme the bundled UI should render with. */
+  theme: UiTheme;
 }
 
 const registry = new Map<string, SessionRecord>();
@@ -49,6 +51,7 @@ export function bindDemoSession(
     model: config.model,
     s3_uri: config.s3_uri,
     connectors: parseConnectors(config.connectors_raw),
+    theme: config.theme,
   };
   registerSession(record);
   return record;

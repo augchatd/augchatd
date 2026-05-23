@@ -3,7 +3,27 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default = LIGHT theme. Opt-in to dark by setting
+     `data-theme="dark"` on the document root (App.tsx does this when
+     the session config says `theme: "dark"`). Tailwind theme tokens
+     reference `rgb(var(--…) / <alpha>)` so swapping these vars
+     re-skins everything that uses bg-/fg-/border-/accent-/warn-
+     utilities. */
   :root {
+    color-scheme: light;
+    --bg-base: 252 252 253;
+    --bg-soft: 244 244 246;
+    --bg-mid: 230 230 234;
+    --fg-base: 17 17 22;
+    --fg-muted: 102 102 110;
+    --accent: 46 96 220;
+    --warn-bg: 255 240 240;
+    --warn-fg: 153 56 56;
+    --warn-border: 230 180 180;
+    --border: 215 215 220;
+  }
+
+  [data-theme="dark"] {
     color-scheme: dark;
     --bg-base: 11 11 13;
     --bg-soft: 19 19 24;

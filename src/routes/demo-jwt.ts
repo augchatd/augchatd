@@ -14,6 +14,10 @@ const DEMO_SESSION_ID = "demo-session";
 export function demoJwtHandler(demoConfig: DemoModeConfig) {
   return async (c: Context): Promise<Response> => {
     const { jwt } = await mintJwt(DEMO_SESSION_ID, demoConfig.ttl_seconds);
-    return c.json({ jwt });
+    // `theme` rides along so the bundled UI can apply the right palette
+    // on first paint without a separate round-trip. In production this
+    // will come from the postMessage handshake with the integrator
+    // (matching what POST /sessions accepted).
+    return c.json({ jwt, theme: demoConfig.theme });
   };
 }

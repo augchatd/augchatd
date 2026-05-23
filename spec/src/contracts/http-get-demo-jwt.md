@@ -30,11 +30,17 @@ None. (Demo mode bypasses mTLS by design.)
 `Content-Type: application/json`
 
 ```json
-{ "jwt": "eyJ..." }
+{ "jwt": "eyJ...", "theme": "light" }
 ```
 
-> [!NOTE] Assumption
-> The README shows the bundled UI fetches a JWT from `GET /demo/jwt` in demo mode, but does not show the exact response shape. The shape above is assumed minimal; will be confirmed when code lands.
+> [!IMPORTANT] PENDING RECONCILIATION
+> The response also carries a `theme: "light" | "dark"` field (default
+> `"light"`, configured via `DEMO_THEME`). The bundled UI applies the
+> palette on first paint via `document.documentElement.setAttribute("data-theme", "dark")`
+> (or no-attribute for light). Spec write-up tracked as item in
+> augchatd/augchatd#5 ("Per-session UI theme"). The production equivalent
+> will be a field on `POST /sessions` and ride the postMessage handshake;
+> not in this commit.
 
 ## Related
 

@@ -2,6 +2,8 @@ import { mkdirSync, readFileSync } from "node:fs";
 
 export type AugchatdMode = "demo" | "prod";
 
+export type UiTheme = "light" | "dark";
+
 export interface DemoModeConfig {
   model: {
     provider: string;
@@ -18,6 +20,12 @@ export interface DemoModeConfig {
    */
   connectors_raw: string | undefined;
   ttl_seconds: number;
+  /**
+   * UI color scheme served by the bundled UI. Default `"light"`. Set via
+   * `DEMO_THEME`. Surfaced to the browser via the `/demo/jwt` response.
+   * (In production this will be a per-session field on `POST /sessions`.)
+   */
+  theme: UiTheme;
 }
 
 export interface BootConfig {
@@ -106,7 +114,17 @@ function readDemoConfig(): DemoModeConfig {
     s3_uri: process.env.DEMO_S3_URI,
     connectors_raw,
     ttl_seconds: readDemoTtl(),
+    theme: readDemoTheme(),
   };
+}
+
+function readDemoTheme(): UiTheme {
+  const raw = process.env.DEMO_THEME?.toLowerCase();
+  if (!raw) return "light";
+  if (raw === "light" || raw === "dark") return raw;
+  throw new Error(
+    `DEMO_THEME must be "light" or "dark" (got '${raw}')`,
+  );
 }
 
 function readDemoTtl(): number {

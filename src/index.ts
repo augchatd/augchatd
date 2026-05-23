@@ -36,6 +36,7 @@ if (config.mode === "demo" && config.demo) {
   console.log(
     `  demo: cold storage=${config.demo.s3_uri ? "S3 configured" : "hot-only"}`,
   );
+  console.log(`  demo: theme=${config.demo.theme}`);
 }
 if (config.trace_dir) {
   console.log(`  trace: appending per-conversation JSONL to ${config.trace_dir}`);
