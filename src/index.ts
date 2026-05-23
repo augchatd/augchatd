@@ -2,6 +2,7 @@ import { loadBootConfig } from "./env.ts";
 import { createApp } from "./server.ts";
 import { bindDemoSession } from "./session-registry.ts";
 import { initMcpConnectors } from "./mcp.ts";
+import { initRagConnectors } from "./rag.ts";
 
 const DEMO_SESSION_ID = "demo-session";
 
@@ -10,9 +11,9 @@ const config = loadBootConfig();
 if (config.mode === "demo" && config.demo) {
   const session = bindDemoSession(DEMO_SESSION_ID, config.demo);
   const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
-  if (mcpConnectors.length > 0) {
-    await initMcpConnectors(mcpConnectors);
-  }
+  const ragConnectors = session.connectors.filter((c) => c.type === "rag");
+  if (mcpConnectors.length > 0) await initMcpConnectors(mcpConnectors);
+  if (ragConnectors.length > 0) await initRagConnectors(ragConnectors);
 }
 
 const app = createApp(config);

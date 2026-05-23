@@ -7,6 +7,7 @@ import {
 } from "ai";
 import { llmFor } from "../llm.ts";
 import { toolsForActiveConnectors } from "../mcp.ts";
+import { toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 
 interface ChatRequestBody {
@@ -44,7 +45,11 @@ export async function chatHandler(c: Context): Promise<Response> {
   }
 
   const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
-  const tools = toolsForActiveConnectors(mcpConnectors);
+  const ragConnectors = session.connectors.filter((c) => c.type === "rag");
+  const tools = {
+    ...toolsForActiveConnectors(mcpConnectors),
+    ...toolsForActiveRagConnectors(ragConnectors),
+  };
 
   const result = streamText({
     model: llmFor(session),
