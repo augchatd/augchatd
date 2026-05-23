@@ -13,6 +13,7 @@ import {
 } from "@assistant-ui/react-ai-sdk";
 import { MarkdownText } from "./Markdown.tsx";
 import { ToolCallBlock, ToolGroup } from "./blocks/ToolCallBlock.tsx";
+import { ConnectorsMenu } from "./ConnectorsMenu.tsx";
 // CitationsPanel temporarily removed — the useThread selector returned a
 // new array each render, triggering React error #185 (max update depth).
 // Reintroduce with the imperative useThreadRuntime + subscribe pattern
@@ -49,6 +50,7 @@ const SUGGESTIONS = [
 export default function App() {
   const [health, setHealth] = useState<HealthState | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +65,11 @@ export default function App() {
           const j = await fetchDemoJwt();
           if (cancelled) return;
           setJwt(j);
+          // Per contract-connector-toggle: register the conversation server-side
+          // before chatting. Server snapshots default_active for each connector.
+          const cid = await createConversation(j);
+          if (cancelled) return;
+          setConversationId(cid);
         } else {
           setError(
             "Production mode requires a JWT via postMessage — not yet wired in this scaffold.",
@@ -85,7 +92,7 @@ export default function App() {
       </div>
     );
   }
-  if (!health || !jwt) {
+  if (!health || !jwt || !conversationId) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-fg-muted">
         Loading…
@@ -96,13 +103,28 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       {health.mode === "demo" && (
-        <div className="border-b border-warn-border bg-warn-bg px-4 py-2 text-center text-[13px] font-medium tracking-wide text-warn-fg">
-          Demo session — not authenticated
+        <div className="flex items-center justify-between gap-4 border-b border-warn-border bg-warn-bg px-4 py-2 text-[13px] font-medium tracking-wide text-warn-fg">
+          <span className="flex-1 text-center">Demo session — not authenticated</span>
+          <ConnectorsMenu conversationId={conversationId} jwt={jwt} />
         </div>
       )}
-      <ChatRoom initialJwt={jwt} />
+      <ChatRoom initialJwt={jwt} conversationId={conversationId} />
     </div>
   );
+}
+
+async function createConversation(jwt: string): Promise<string> {
+  const r = await fetch("/conversations", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!r.ok) throw new Error(`POST /conversations HTTP ${r.status}`);
+  const j = (await r.json()) as { conversation_id: string };
+  return j.conversation_id;
 }
 
 async function fetchDemoJwt(): Promise<string> {
@@ -112,7 +134,13 @@ async function fetchDemoJwt(): Promise<string> {
   return j.jwt;
 }
 
-function ChatRoom({ initialJwt }: { initialJwt: string }) {
+function ChatRoom({
+  initialJwt,
+  conversationId,
+}: {
+  initialJwt: string;
+  conversationId: string;
+}) {
   const jwtRef = useRef(initialJwt);
 
   const transport = useMemo(
@@ -136,7 +164,7 @@ function ChatRoom({ initialJwt }: { initialJwt: string }) {
     [],
   );
 
-  const runtime = useChatRuntime({ transport });
+  const runtime = useChatRuntime({ id: conversationId, transport });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
