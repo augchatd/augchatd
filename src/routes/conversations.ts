@@ -5,7 +5,9 @@ import {
   getConversation,
   listConnectorsForConversation,
   setConnectorActive,
+  setConversationModel,
 } from "../conversation-registry.ts";
+import { ensureModelsCached } from "./models.ts";
 
 /**
  * Conversation + per-conversation connector toggle endpoints.
@@ -109,5 +111,51 @@ export async function setConversationConnectorStateHandler(c: Context): Promise<
   const res = setConnectorActive(record, session, did, active);
   if (!res.ok) return c.json({ error: res.reason }, 404);
 
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * PUT /conversations/:conversation_id/model
+ *
+ * Body: `{ model_id: string }`. Validates the id against the provider's
+ * cached models list. 400 if unknown, 404 if cid unknown, 204 on success.
+ */
+export async function setConversationModelHandler(c: Context): Promise<Response> {
+  const session = c.get("session") as SessionRecord;
+  const cid = c.req.param("conversation_id");
+  if (!cid) return c.json({ error: "missing_conversation_id" }, 400);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return c.json({ error: "body_must_be_object" }, 400);
+  }
+  const fields = Object.keys(body as object);
+  if (fields.length !== 1 || fields[0] !== "model_id") {
+    return c.json({ error: "only_model_id_field_allowed" }, 400);
+  }
+  const model_id = (body as { model_id: unknown }).model_id;
+  if (typeof model_id !== "string" || model_id.length === 0) {
+    return c.json({ error: "model_id_must_be_non_empty_string" }, 400);
+  }
+
+  const record = getConversation(cid, session.session_id);
+  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+
+  let known;
+  try {
+    const models = await ensureModelsCached(session);
+    known = models.find((m) => m.id === model_id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "provider_list_failed", detail: msg }, 502);
+  }
+  if (!known) return c.json({ error: "unknown_model_id" }, 400);
+
+  setConversationModel(record, model_id);
   return new Response(null, { status: 204 });
 }

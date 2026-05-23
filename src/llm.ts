@@ -10,9 +10,17 @@ import type { SessionRecord } from "./session-registry.ts";
  * Per adr-0006-vercel-ai-sdk-for-llm: provider plug-ins are selected
  * per session by the `model.provider` field in the setup payload. Each
  * supported provider adds a `case` branch with its constructor.
+ *
+ * `modelIdOverride` (when provided) substitutes the session's default
+ * model_id — used by the per-conversation model picker. Provider/key
+ * always come from the session.
  */
-export function llmFor(session: SessionRecord): LanguageModel {
-  const { provider, model_id, api_key } = session.model;
+export function llmFor(
+  session: SessionRecord,
+  modelIdOverride?: string,
+): LanguageModel {
+  const { provider, api_key } = session.model;
+  const model_id = modelIdOverride ?? session.model.model_id;
   switch (provider) {
     case "anthropic": {
       const client = createAnthropic({ apiKey: api_key });

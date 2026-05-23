@@ -32,6 +32,12 @@ export interface ConversationRecord {
   session_id: string;
   /** descriptive_id → saved active flag. */
   active_map: Map<string, boolean>;
+  /**
+   * Optional per-conversation override of the session's default model_id.
+   * Set via PUT /conversations/:cid/model. When unset, the chat handler
+   * falls back to session.model.model_id.
+   */
+  model_id_override: string | undefined;
 }
 
 const registry = new Map<string, ConversationRecord>();
@@ -68,9 +74,24 @@ export function createConversation(
     conversation_id,
     session_id: session.session_id,
     active_map,
+    model_id_override: undefined,
   };
   registry.set(conversation_id, record);
   return record;
+}
+
+export function setConversationModel(
+  record: ConversationRecord,
+  model_id: string,
+): void {
+  record.model_id_override = model_id;
+}
+
+export function resolveModelId(
+  record: ConversationRecord,
+  session: SessionRecord,
+): string {
+  return record.model_id_override ?? session.model.model_id;
 }
 
 export function getConversation(

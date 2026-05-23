@@ -6,7 +6,9 @@ import {
   createConversationHandler,
   listConversationConnectorsHandler,
   setConversationConnectorStateHandler,
+  setConversationModelHandler,
 } from "./routes/conversations.ts";
+import { listSessionModelsHandler } from "./routes/models.ts";
 import { requireSession } from "./auth.ts";
 import { mountStaticUi } from "./routes/static-ui.ts";
 import type { BootConfig } from "./env.ts";
@@ -26,7 +28,7 @@ import type { BootConfig } from "./env.ts";
  *   - GET /healthz       — exposed
  *   - everything else    — to come
  */
-const API_PATHS = ["/healthz", "/demo/jwt", "/chat", "/sessions", "/conversations"];
+const API_PATHS = ["/healthz", "/demo/jwt", "/chat", "/sessions", "/conversations", "/session"];
 
 export function createApp(config: BootConfig): Hono {
   const app = new Hono();
@@ -47,6 +49,12 @@ export function createApp(config: BootConfig): Hono {
       requireSession,
       setConversationConnectorStateHandler,
     );
+    app.put(
+      "/conversations/:conversation_id/model",
+      requireSession,
+      setConversationModelHandler,
+    );
+    app.get("/session/models", requireSession, listSessionModelsHandler);
   }
 
   // UI serving is mode-agnostic; in prod the UI handshake gets the JWT

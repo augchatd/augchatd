@@ -12,7 +12,7 @@ import { toolsForActiveConnectors } from "../mcp.ts";
 import { toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
-import { getConversation, snapshotActiveMap } from "../conversation-registry.ts";
+import { getConversation, resolveModelId, snapshotActiveMap } from "../conversation-registry.ts";
 
 interface ChatRequestBody {
   /**
@@ -73,6 +73,7 @@ export async function chatHandler(c: Context): Promise<Response> {
   // "active set is captured at the start of each chat turn". In-flight
   // toggles do not affect this turn.
   const activeMap = snapshotActiveMap(conversation, session);
+  const modelId = resolveModelId(conversation, session);
 
   const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
   const ragConnectors = session.connectors.filter((c) => c.type === "rag");
@@ -90,7 +91,8 @@ export async function chatHandler(c: Context): Promise<Response> {
     user_id: session.user_id,
     model: {
       provider: session.model.provider,
-      model_id: session.model.model_id,
+      model_id: modelId,
+      session_default_model_id: session.model.model_id,
     },
     system_prompt: session.system_prompt,
     connectors: session.connectors.map((c) => ({
@@ -106,7 +108,7 @@ export async function chatHandler(c: Context): Promise<Response> {
   const uiStream = createUIMessageStream<UIMessage>({
     execute: async ({ writer }) => {
       const result = streamText({
-        model: llmFor(session),
+        model: llmFor(session, modelId),
         system: session.system_prompt,
         messages,
         tools: Object.keys(tools).length > 0 ? tools : undefined,
