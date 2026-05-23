@@ -40,19 +40,34 @@ async function listOpenAIModels(apiKey: string): Promise<ProviderModel[]> {
     throw new Error(`openai list models: HTTP ${r.status}`);
   }
   const j = (await r.json()) as OpenAIListResponse;
-  // Filter to chat-capable models. OpenAI's /v1/models also returns
-  // embeddings, tts, whisper, dall-e, moderation, legacy completion —
-  // none of which work with chat.completions. Prefix heuristic: gpt-*,
-  // chatgpt-*, o1*, o3*, o4*, o5*.
+  // OpenAI's /v1/models returns ~50 entries including legacy generations,
+  // embeddings, image-gen, audio (tts/transcribe), code-tuned variants,
+  // and special-purpose endpoints. The picker is a per-conversation
+  // model override for chat-agentic use, so we curate aggressively:
+  //
+  //   ALLOW gpt-5*, gpt-4o*, gpt-4.1*, chatgpt-* prefix; o[1-9]* reasoning models
+  //   DROP  date-stamped snapshots (-YYYY-MM-DD)
+  //   DROP  audio (-audio/-tts/-transcribe), images (gpt-image-*/chatgpt-image-*),
+  //         realtime/search-preview/search-api/deep-research,
+  //         code-tuned (-codex) — all not what augchatd's chat lane needs
+  //   DROP  legacy: gpt-3.5*, plain gpt-4 / gpt-4-0613 / gpt-4-turbo*
+  //
+  // Operators who need a dropped variant can still PUT it via
+  // /conversations/:cid/model — the validation reads from this cache, so
+  // the user has to first call `GET /session/models` after editing the
+  // filter, but the override path itself isn't blocked.
   const chatRe = /^(gpt-|chatgpt-|o[1-9])/;
+  const dateRe = /-\d{4}-\d{2}-\d{2}$/;
+  const specialRe =
+    /-audio|-realtime|-search-preview|-search-api|-transcribe|-tts|-deep-research|-codex/;
+  const imageRe = /^(chatgpt|gpt)-image/;
+  const legacyRe = /^gpt-3\.5|^gpt-4($|-0613|-turbo)/;
   return j.data
     .filter((m) => chatRe.test(m.id))
-    // Drop date-stamped snapshots (e.g. gpt-4o-2024-08-06) — they
-    // clutter the picker and the aliased version (gpt-4o) is the
-    // recommended one.
-    .filter((m) => !/-\d{4}-\d{2}-\d{2}$/.test(m.id))
-    // Drop audio/preview/realtime variants that aren't useful for chat.
-    .filter((m) => !/-audio|-realtime|-search-preview/.test(m.id))
+    .filter((m) => !dateRe.test(m.id))
+    .filter((m) => !specialRe.test(m.id))
+    .filter((m) => !imageRe.test(m.id))
+    .filter((m) => !legacyRe.test(m.id))
     .map((m) => ({ id: m.id, display_name: m.id, provider: "openai" }))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
