@@ -106,6 +106,18 @@ export function openHotDb(tenant_id: string, user_id: string): Database {
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = NORMAL");
     db.exec(SCHEMA);
+    // Forward-only migrations for tables that pre-existed without a
+    // newer column. SQLite has no `ADD COLUMN IF NOT EXISTS`, so we
+    // try and swallow the "duplicate column" error on already-migrated
+    // databases. New columns must keep being added here when the
+    // schema grows.
+    for (const stmt of MIGRATIONS) {
+      try {
+        db.exec(stmt);
+      } catch {
+        /* column already exists — idempotent */
+      }
+    }
     opened.set(key, db);
     return db;
   } catch (err) {
@@ -114,6 +126,12 @@ export function openHotDb(tenant_id: string, user_id: string): Database {
     );
   }
 }
+
+const MIGRATIONS = [
+  // Per-message metadata (e.g. which model produced an assistant message).
+  // Added after the initial schema; existing rows get NULL.
+  "ALTER TABLE message ADD COLUMN metadata_json TEXT",
+];
 
 /** Get (or open) the hot DB for a session. */
 export function storageFor(session: SessionRecord): Database {

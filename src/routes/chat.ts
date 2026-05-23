@@ -125,7 +125,12 @@ export async function chatHandler(c: Context): Promise<Response> {
         upsertMessages(
           conversation,
           session,
-          messages.map((m) => ({ id: m.id, role: m.role, parts: m.parts })),
+          messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            parts: m.parts,
+            metadata: m.metadata,
+          })),
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -204,7 +209,28 @@ export async function chatHandler(c: Context): Promise<Response> {
         },
       });
 
-      writer.merge(result.toUIMessageStream());
+      writer.merge(
+        result.toUIMessageStream({
+          // Attach the resolved model + provider as message metadata
+          // on this response. assistant-ui surfaces it under
+          // `message.metadata.custom`; the bundled UI renders a small
+          // chip per assistant message so a user who switched models
+          // mid-conversation can tell which model produced each reply.
+          // Returning the same metadata on both 'start' and 'finish'
+          // events is harmless (idempotent).
+          messageMetadata: ({ part }) => {
+            if (part.type === "start" || part.type === "finish") {
+              return {
+                augchatd: {
+                  model_id: modelId,
+                  provider: session.model.provider,
+                },
+              };
+            }
+            return undefined;
+          },
+        }),
+      );
 
       // After the model stream completes, inspect why it stopped.
       // If we hit the step cap mid-tool-loop, emit a fallback text

@@ -48,6 +48,13 @@ export interface StoredMessage {
   ordinal: number;
   role: string;
   parts: unknown;
+  /**
+   * Free-form metadata attached to the message (e.g. which model
+   * produced an assistant response). Mirrors the AI SDK UIMessage
+   * `metadata` field; assistant-ui renders it under
+   * `message.metadata.custom`.
+   */
+  metadata: unknown;
 }
 
 function nowIso(): string {
@@ -226,20 +233,21 @@ export function resolveModelId(
 export function upsertMessages(
   record: ConversationRecord,
   session: SessionRecord,
-  messages: Array<{ id: string; role: string; parts: unknown }>,
+  messages: Array<{ id: string; role: string; parts: unknown; metadata?: unknown }>,
 ): void {
   const db = storageFor(session);
   const now = nowIso();
   try {
     db.transaction(() => {
       const stmt = db.prepare(
-        `INSERT INTO message (conversation_id, message_id, ordinal, role, parts_json, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO message (conversation_id, message_id, ordinal, role, parts_json, metadata_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(conversation_id, message_id) DO UPDATE SET
-           ordinal    = excluded.ordinal,
-           role       = excluded.role,
-           parts_json = excluded.parts_json,
-           updated_at = excluded.updated_at`,
+           ordinal       = excluded.ordinal,
+           role          = excluded.role,
+           parts_json    = excluded.parts_json,
+           metadata_json = excluded.metadata_json,
+           updated_at    = excluded.updated_at`,
       );
       messages.forEach((m, i) => {
         stmt.run(
@@ -248,6 +256,7 @@ export function upsertMessages(
           i,
           m.role,
           JSON.stringify(m.parts ?? []),
+          m.metadata !== undefined ? JSON.stringify(m.metadata) : null,
           now,
         );
       });
@@ -264,7 +273,7 @@ export function listMessages(
   const db = storageFor(session);
   const rows = db
     .prepare(
-      `SELECT message_id, ordinal, role, parts_json
+      `SELECT message_id, ordinal, role, parts_json, metadata_json
          FROM message
         WHERE conversation_id = ?
         ORDER BY ordinal ASC, message_id ASC`,
@@ -274,12 +283,14 @@ export function listMessages(
     ordinal: number;
     role: string;
     parts_json: string;
+    metadata_json: string | null;
   }>;
   return rows.map((r) => ({
     message_id: r.message_id,
     ordinal: r.ordinal,
     role: r.role,
     parts: safeJsonParse(r.parts_json),
+    metadata: r.metadata_json ? safeJsonParse(r.metadata_json) : null,
   }));
 }
 
