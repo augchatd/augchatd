@@ -12,7 +12,7 @@ import { toolsForActiveConnectors } from "../mcp.ts";
 import { toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
-import { getConversation, resolveModelId, snapshotActiveMap } from "../conversation-registry.ts";
+import { createConversation, getConversation, resolveModelId, snapshotActiveMap } from "../conversation-registry.ts";
 
 interface ChatRequestBody {
   /**
@@ -62,12 +62,17 @@ export async function chatHandler(c: Context): Promise<Response> {
   }
 
   const conversationId = body.id;
-  const conversation = getConversation(conversationId, session.session_id);
-  if (!conversation) {
-    // Per contract-connector-toggle: the conversation must be registered
-    // first via POST /conversations. The bundled UI does this on boot.
-    return c.json({ error: "conversation_not_found" }, 404);
-  }
+  // Auto-create on first observation if not registered. Keeps the chat
+  // path resilient to two real-world cases:
+  //   1. A server restart that zeroed the in-memory registry, while the
+  //      browser still holds the old conversation_id in localStorage.
+  //   2. Clients (or tests) that POST /chat directly without first
+  //      POSTing /conversations.
+  // The snapshot-default_active-on-first-observation rule from
+  // contract-connector-toggle is preserved (createConversation does it).
+  const conversation =
+    getConversation(conversationId, session.session_id) ??
+    createConversation(session, conversationId);
 
   // Snapshot at the start of the turn — per contract-session-chat:
   // "active set is captured at the start of each chat turn". In-flight
