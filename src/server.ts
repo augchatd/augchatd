@@ -43,10 +43,14 @@ export function createApp(config: BootConfig): Hono {
   app.get("/healthz", healthzHandler(config.mode));
 
   if (config.mode === "demo" && config.demo) {
-    app.get("/demo", demoPageHandler);
-    app.get("/demo/", demoPageHandler);
+    // Specific routes first so they win over the wildcard below.
     app.get("/demo/jwt", demoJwtHandler(config.demo));
     app.post("/demo/sessions", demoSessionsHandler(config.demo));
+    app.get("/demo", demoPageHandler);
+    // Wildcard so the wrapper page also serves /demo/c/<cid> etc. —
+    // lets us mirror the iframe's internal route into a real URL path
+    // (instead of a fragment) so it shows up in server logs.
+    app.get("/demo/*", demoPageHandler);
     app.post("/chat", requireSession, chatHandler);
     app.post("/conversations", requireSession, createConversationHandler);
     app.get(

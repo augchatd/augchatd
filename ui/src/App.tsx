@@ -192,8 +192,24 @@ async function resolveBootConversation(jwt: string): Promise<BootState> {
   });
   if (!r.ok) throw new Error(`POST /conversations HTTP ${r.status}`);
   const { conversation_id } = (await r.json()) as { conversation_id: string };
-  window.history.replaceState(null, "", `/c/${conversation_id}`);
+  setIframeRoute(`/c/${conversation_id}`);
   return { cid: conversation_id, initialMessages: [] };
+}
+
+/**
+ * Update the iframe's internal route AND tell the parent window so the
+ * parent can persist it (the demo wrapper writes it to its URL fragment,
+ * so a hard reload preserves the conversation). For top-level use
+ * (no parent), behaves as a plain replaceState.
+ */
+function setIframeRoute(path: string): void {
+  window.history.replaceState(null, "", path);
+  if (window.parent !== window) {
+    window.parent.postMessage(
+      { type: "augchatd:route", path },
+      window.location.origin,
+    );
+  }
 }
 
 /**

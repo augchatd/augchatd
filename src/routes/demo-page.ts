@@ -63,11 +63,33 @@ const DEMO_PAGE_HTML = `<!doctype html>
       origin,
     );
   }
+  // Restore the iframe's previous route from the parent URL pathname.
+  // /demo/c/<cid> on the parent maps to /c/<cid> on the iframe; /demo or
+  // /demo/ maps to /. Using a real path (not a fragment) means it shows
+  // up in server logs — handy for debugging and support.
+  function iframePathFromParent() {
+    var p = window.location.pathname; // '/demo', '/demo/', or '/demo/c/<cid>'
+    if (p === '/demo' || p === '/demo/') return '/';
+    if (p.indexOf('/demo/') === 0) return p.slice(5);
+    return '/';
+  }
   window.addEventListener('message', (e) => {
     if (e.origin !== origin) return;
-    if (e.data && e.data.type === 'augchatd:ready') mintAndSend();
+    var d = e.data;
+    if (!d) return;
+    if (d.type === 'augchatd:ready') {
+      mintAndSend();
+    } else if (d.type === 'augchatd:route' && typeof d.path === 'string') {
+      // The iframe navigated internally (e.g. minted a new conversation).
+      // Mirror it into the parent URL pathname so the next reload picks
+      // it up via iframePathFromParent(). /c/<cid> → /demo/c/<cid>.
+      var newPath = d.path === '/' ? '/demo/' : '/demo' + d.path;
+      if (newPath !== window.location.pathname) {
+        window.history.replaceState(null, '', newPath);
+      }
+    }
   });
-  iframe.src = '/';
+  iframe.src = iframePathFromParent();
 })();
 </script>
 </body>
