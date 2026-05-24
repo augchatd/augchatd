@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { healthzHandler } from "./routes/healthz.ts";
 import { demoJwtHandler } from "./routes/demo-jwt.ts";
+import { demoSessionsHandler } from "./routes/demo-sessions.ts";
 import { chatHandler } from "./routes/chat.ts";
 import {
   createConversationHandler,
@@ -19,7 +20,8 @@ import type { BootConfig } from "./env.ts";
  *
  * Demo mode (per contract-demo-mode):
  *   - GET  /healthz         — exposed
- *   - GET  /demo/jwt        — exposed
+ *   - GET  /demo/jwt        — exposed (legacy; remove once UI migrates)
+ *   - POST /demo/sessions   — exposed; mints a fresh session from env
  *   - POST /chat            — exposed (JWT bearer; demo session bound at boot)
  *   - POST /sessions        — NOT mounted (returns 404 by default)
  *   - DELETE /sessions/*    — NOT mounted (returns 404 by default)
@@ -29,7 +31,7 @@ import type { BootConfig } from "./env.ts";
  *   - GET /healthz       — exposed
  *   - everything else    — to come
  */
-const API_PATHS = ["/healthz", "/demo/jwt", "/chat", "/sessions", "/conversations", "/session"];
+const API_PATHS = ["/healthz", "/demo", "/chat", "/sessions", "/conversations", "/session"];
 
 export function createApp(config: BootConfig): Hono {
   const app = new Hono();
@@ -38,6 +40,7 @@ export function createApp(config: BootConfig): Hono {
 
   if (config.mode === "demo" && config.demo) {
     app.get("/demo/jwt", demoJwtHandler(config.demo));
+    app.post("/demo/sessions", demoSessionsHandler(config.demo));
     app.post("/chat", requireSession, chatHandler);
     app.post("/conversations", requireSession, createConversationHandler);
     app.get(
