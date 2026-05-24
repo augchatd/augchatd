@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { healthzHandler } from "./routes/healthz.ts";
 import { demoJwtHandler } from "./routes/demo-jwt.ts";
 import { demoSessionsHandler } from "./routes/demo-sessions.ts";
+import { demoPageHandler } from "./routes/demo-page.ts";
 import { chatHandler } from "./routes/chat.ts";
 import {
   createConversationHandler,
@@ -20,8 +21,11 @@ import type { BootConfig } from "./env.ts";
  *
  * Demo mode (per contract-demo-mode):
  *   - GET  /healthz         — exposed
- *   - GET  /demo/jwt        — exposed (legacy; remove once UI migrates)
+ *   - GET  /demo/           — exposed; "integrator" wrapper page that
+ *                              iframes the UI and runs the postMessage
+ *                              handshake against POST /demo/sessions
  *   - POST /demo/sessions   — exposed; mints a fresh session from env
+ *   - GET  /demo/jwt        — exposed (legacy; removed once UI migrates)
  *   - POST /chat            — exposed (JWT bearer; demo session bound at boot)
  *   - POST /sessions        — NOT mounted (returns 404 by default)
  *   - DELETE /sessions/*    — NOT mounted (returns 404 by default)
@@ -39,6 +43,8 @@ export function createApp(config: BootConfig): Hono {
   app.get("/healthz", healthzHandler(config.mode));
 
   if (config.mode === "demo" && config.demo) {
+    app.get("/demo", demoPageHandler);
+    app.get("/demo/", demoPageHandler);
     app.get("/demo/jwt", demoJwtHandler(config.demo));
     app.post("/demo/sessions", demoSessionsHandler(config.demo));
     app.post("/chat", requireSession, chatHandler);

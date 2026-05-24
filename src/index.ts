@@ -30,7 +30,7 @@ const app = createApp(config);
 // story 0009).
 console.log(`augchatd up on :${config.port} (mode=${config.mode})`);
 if (config.mode === "demo" && config.demo) {
-  console.log("  demo: GET /demo/jwt enabled, mTLS bypassed, single-tenant");
+  console.log(`  demo: open http://localhost:${config.port}/demo/`);
   console.log(`  demo: ttl_seconds=${config.demo.ttl_seconds}`);
   console.log(`  demo: model=${config.demo.model.provider}/${config.demo.model.model_id}`);
   console.log(

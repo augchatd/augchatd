@@ -45,18 +45,19 @@ const SUGGESTIONS = [
 /**
  * augchatd bundled UI.
  *
- * Per story 0007 / contract-demo-mode:
- *  - Boots, calls /healthz to learn the mode.
- *  - In demo mode, fetches the JWT from /demo/jwt.
- *  - Shows a "Demo session — not authenticated" banner from inside
- *    the augchatd origin (parent page cannot style or hide it).
- *  - Hands the JWT to the chat runtime; POST /chat carries it as a
- *    Bearer token; on 401 the JWT is re-fetched once (per
- *    contract-jwt-refresh, single recovery path).
- *
- * Production handshake (postMessage from the integrator parent page,
- * per contract-ui-handshake) is not wired yet — that comes when prod
- * POST /sessions lands.
+ * Per contract-demo-mode + contract-ui-handshake:
+ *  - This SPA is meant to run inside an iframe; the parent page supplies
+ *    the JWT via postMessage (the augchatd:ready / augchatd:jwt
+ *    handshake). Same flow in demo (parent = demo wrapper at /demo/)
+ *    and prod (parent = integrator's app page).
+ *  - Boots, calls /healthz for the mode (used for the demo banner).
+ *  - If running top-level (no iframe parent) it shows a guidance
+ *    message instead of hanging on the handshake.
+ *  - Shows a "Demo session — not authenticated" banner in demo mode
+ *    from inside the augchatd origin (parent cannot style or hide it).
+ *  - Hands the JWT to the chat runtime; on 401 the JWT is re-fetched
+ *    via a second handshake (per contract-jwt-refresh, single recovery
+ *    path).
  */
 export default function App() {
   const [health, setHealth] = useState<HealthState | null>(null);
@@ -72,18 +73,25 @@ export default function App() {
         if (cancelled) return;
         setHealth(h);
 
-        if (h.mode !== "demo") {
+        // This SPA must run inside an iframe — the parent supplies the
+        // JWT via postMessage. Loading at top-level is a misconfig; tell
+        // the user where to go instead of hanging on a handshake that
+        // can never complete.
+        if (window.parent === window) {
           setError(
-            "Production mode requires a JWT via postMessage — not yet wired in this scaffold.",
+            h.mode === "demo"
+              ? "augchatd: this UI runs inside an iframe — open /demo/ instead of /."
+              : "augchatd: this UI must be embedded by an integrator page (postMessage handshake required).",
           );
           return;
         }
 
-        const j = await fetchDemoJwt();
+        const { jwt, theme } = await requestJwtFromParent();
         if (cancelled) return;
-        setJwt(j);
+        applyTheme(theme);
+        setJwt(jwt);
 
-        const b = await resolveBootConversation(j);
+        const b = await resolveBootConversation(jwt);
         if (cancelled) return;
         setBoot(b);
       } catch (e) {
@@ -188,12 +196,49 @@ async function resolveBootConversation(jwt: string): Promise<BootState> {
   return { cid: conversation_id, initialMessages: [] };
 }
 
-async function fetchDemoJwt(): Promise<string> {
-  const r = await fetch("/demo/jwt");
-  if (!r.ok) throw new Error(`/demo/jwt HTTP ${r.status}`);
-  const j = (await r.json()) as { jwt: string; theme?: "light" | "dark" };
-  applyTheme(j.theme);
-  return j.jwt;
+/**
+ * iframe ↔ parent JWT handshake (contract-ui-handshake).
+ *
+ *   iframe → parent: postMessage({type:'augchatd:ready'})
+ *   parent → iframe: postMessage({type:'augchatd:jwt', jwt, theme})
+ *
+ * Re-callable: each call posts a new `augchatd:ready` and resolves on
+ * the next matching `augchatd:jwt`. Used both for first boot and for
+ * 401 recovery.
+ *
+ * Origin check is same-origin (`window.location.origin`). In demo the
+ * wrapper page is same-origin with this iframe, so this is correct. In
+ * production the parent will be a different origin — the cross-origin
+ * variant of this check requires the iframe to learn the expected
+ * integrator origin (e.g. via a query param on its src). Tracked
+ * separately; not blocking the demo.
+ */
+function requestJwtFromParent(
+  timeoutMs = 10000,
+): Promise<{ jwt: string; theme?: "light" | "dark" }> {
+  return new Promise((resolve, reject) => {
+    const origin = window.location.origin;
+    const handler = (e: MessageEvent) => {
+      if (e.origin !== origin) return;
+      const d = e.data as { type?: string; jwt?: unknown; theme?: unknown } | undefined;
+      if (d?.type !== "augchatd:jwt" || typeof d.jwt !== "string") return;
+      window.removeEventListener("message", handler);
+      clearTimeout(timer);
+      const theme =
+        d.theme === "dark" || d.theme === "light" ? d.theme : undefined;
+      resolve({ jwt: d.jwt, theme });
+    };
+    const timer = setTimeout(() => {
+      window.removeEventListener("message", handler);
+      reject(
+        new Error(
+          `augchatd: parent did not reply to augchatd:ready within ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+    window.addEventListener("message", handler);
+    window.parent.postMessage({ type: "augchatd:ready" }, origin);
+  });
 }
 
 /**
@@ -233,7 +278,9 @@ function ChatRoom({
       const first = await fetch(input, withAuth(jwtRef.current));
       if (first.status !== 401) return first;
       try {
-        jwtRef.current = await fetchDemoJwt();
+        const { jwt, theme } = await requestJwtFromParent();
+        jwtRef.current = jwt;
+        applyTheme(theme);
       } catch {
         return first;
       }
@@ -251,7 +298,9 @@ function ChatRoom({
           const r = await fetch(input, init);
           if (r.status !== 401) return r;
           try {
-            jwtRef.current = await fetchDemoJwt();
+            const { jwt, theme } = await requestJwtFromParent();
+            jwtRef.current = jwt;
+            applyTheme(theme);
           } catch {
             return r;
           }
