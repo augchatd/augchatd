@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { healthzHandler } from "./routes/healthz.ts";
-import { demoJwtHandler } from "./routes/demo-jwt.ts";
 import { demoSessionsHandler } from "./routes/demo-sessions.ts";
 import { demoPageHandler } from "./routes/demo-page.ts";
 import { chatHandler } from "./routes/chat.ts";
@@ -21,12 +20,15 @@ import type { BootConfig } from "./env.ts";
  *
  * Demo mode (per contract-demo-mode):
  *   - GET  /healthz         — exposed
- *   - GET  /demo/           — exposed; "integrator" wrapper page that
- *                              iframes the UI and runs the postMessage
- *                              handshake against POST /demo/sessions
+ *   - GET  /demo, /demo/*   — exposed; the "integrator" wrapper page
+ *                              that iframes the UI and runs the
+ *                              postMessage handshake against
+ *                              POST /demo/sessions. The wildcard lets
+ *                              /demo/c/<cid> resolve to the same page
+ *                              so reloads preserve the conversation.
  *   - POST /demo/sessions   — exposed; mints a fresh session from env
- *   - GET  /demo/jwt        — exposed (legacy; removed once UI migrates)
- *   - POST /chat            — exposed (JWT bearer; demo session bound at boot)
+ *   - POST /chat            — exposed (JWT bearer; session from
+ *                              POST /demo/sessions)
  *   - POST /sessions        — NOT mounted (returns 404 by default)
  *   - DELETE /sessions/*    — NOT mounted (returns 404 by default)
  *   - GET  /, /assets/*     — bundled UI (static)
@@ -44,8 +46,16 @@ export function createApp(config: BootConfig): Hono {
 
   if (config.mode === "demo" && config.demo) {
     // Specific routes first so they win over the wildcard below.
-    app.get("/demo/jwt", demoJwtHandler(config.demo));
     app.post("/demo/sessions", demoSessionsHandler(config.demo));
+    // Explicit 404 for the removed legacy endpoint — otherwise the
+    // wildcard below would happily serve the wrapper HTML at this
+    // URL, which is confusing for anyone with cached docs / scripts.
+    app.get("/demo/jwt", (c) =>
+      c.json(
+        { error: "removed", hint: "use POST /demo/sessions" },
+        404,
+      ),
+    );
     app.get("/demo", demoPageHandler);
     // Wildcard so the wrapper page also serves /demo/c/<cid> etc. —
     // lets us mirror the iframe's internal route into a real URL path

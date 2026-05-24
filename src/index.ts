@@ -1,12 +1,10 @@
 import { loadBootConfig } from "./env.ts";
 import { createApp } from "./server.ts";
-import { bindDemoSession } from "./session-registry.ts";
+import { parseConnectors } from "./connectors.ts";
 import { initMcpConnectors } from "./mcp.ts";
 import { initRagConnectors } from "./rag.ts";
 import { initTrace } from "./trace.ts";
 import { initStorageForDemo } from "./storage.ts";
-
-const DEMO_SESSION_ID = "demo-session";
 
 const config = loadBootConfig();
 
@@ -16,9 +14,14 @@ if (config.mode === "demo" && config.demo) {
   // Open hot SQLite for the demo (tenant, user) before the first
   // conversation/chat request — avoids first-request latency spike.
   initStorageForDemo();
-  const session = bindDemoSession(DEMO_SESSION_ID, config.demo);
-  const mcpConnectors = session.connectors.filter((c) => c.type === "mcp");
-  const ragConnectors = session.connectors.filter((c) => c.type === "rag");
+  // MCP and RAG clients are expensive (handshake, persistent connection)
+  // — initialize them once at boot. Each POST /demo/sessions mints a
+  // SessionRecord with its own connector array, but the clients are
+  // shared via the module-level registry in mcp.ts / rag.ts (keyed by
+  // descriptive_id).
+  const connectors = parseConnectors(config.demo.connectors_raw);
+  const mcpConnectors = connectors.filter((c) => c.type === "mcp");
+  const ragConnectors = connectors.filter((c) => c.type === "rag");
   if (mcpConnectors.length > 0) await initMcpConnectors(mcpConnectors);
   if (ragConnectors.length > 0) await initRagConnectors(ragConnectors);
 }

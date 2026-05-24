@@ -15,7 +15,12 @@ augchatd is a **single binary** that contains everything below.
 augchatd process
 ├── HTTP API layer (Hono)
 │   ├── mTLS endpoints: POST /sessions, DELETE /sessions/:id
-│   ├── demo endpoint (mode=demo only): GET /demo/jwt
+│   ├── demo endpoints (mode=demo only):
+│   │     GET  /demo, /demo/*   ← wrapper page (iframes the UI, runs the
+│   │                              postMessage handshake; wildcard so
+│   │                              /demo/c/<cid> resolves there too)
+│   │     POST /demo/sessions   ← mint a fresh session from env (same
+│   │                              shape as POST /sessions response)
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
 │   ├── JWT endpoints: chat, conversation CRUD,
 │   │                   GET /conversations/:cid/connectors (active per conversation),

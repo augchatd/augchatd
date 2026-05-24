@@ -88,12 +88,12 @@ docker run -p 8080:8080 \
   -e DEMO_SYSTEM_PROMPT="You are a helpful assistant." \
   augchatd/augchatd   # image TBD — not yet published
 
-open http://localhost:8080
+open http://localhost:8080/demo/
 ```
 
-Add `DEMO_CONNECTORS` (a JSON string, same shape as the production payload's `connectors[]`) **or** `DEMO_CONNECTORS_FILE` (path to a JSON file with the same shape) to enable connectors — the file variant avoids leaking credentials through shell history and committed compose files. Add `DEMO_S3_URI` to enable cold storage (without it the demo runs hot-only and history is lost on restart, which is fine for local demos). The browser loads the bundled UI from the same port, fetches a session JWT from `GET /demo/jwt`, then chats normally.
+Add `DEMO_CONNECTORS` (a JSON string, same shape as the production payload's `connectors[]`) **or** `DEMO_CONNECTORS_FILE` (path to a JSON file with the same shape) to enable connectors — the file variant avoids leaking credentials through shell history and committed compose files. Add `DEMO_S3_URI` to enable cold storage (without it the demo runs hot-only and history is lost on restart, which is fine for local demos). `GET /demo/` serves a small "fake integrator" wrapper that runs the same iframe + postMessage handshake an integrator does in production — it `POST`s `/demo/sessions` for the JWT and hands it to the iframe.
 
-Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, holds credentials in the process environment, and **does not accept `POST /sessions`** — the demo session is bound at process boot from env vars, not minted per request (calls to `POST /sessions` or `DELETE /sessions/:id` return 404). The bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, holds credentials in the process environment, and **does not accept `POST /sessions`** — sessions are minted by `POST /demo/sessions` from env vars instead (calls to the mTLS `POST /sessions` or `DELETE /sessions/:id` return 404). The bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes — and exercises the same iframe handshake every day in dev.
 
 augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "mode": "demo" | "prod", "status": "ok" }`. The `mode` field is the safety net for accidental demo deploys — fail your deploy if a production health check reports `"mode": "demo"`.
 
