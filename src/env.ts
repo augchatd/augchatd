@@ -168,9 +168,9 @@ function validateSession(value: unknown): DemoModeConfig {
   }
 
   // parseConnectors throws plain Error (it's shared with future POST /sessions
-  // handling, where the route should turn it into a 400). At boot, those
-  // would skip bootOrDie's friendly print — rewrap as BootConfigError so the
-  // user sees a clean exit-1 message instead of a Bun stack.
+  // handling, where the route should turn it into a 400). At boot, those would
+  // skip the friendly clean-exit branch in src/index.ts — rewrap as
+  // BootConfigError so the user sees a one-line message instead of a Bun stack.
   let connectors;
   try {
     connectors = parseConnectors(o["connectors"]);
