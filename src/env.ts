@@ -78,8 +78,14 @@ function readMode(): AugchatdMode {
 function readPort(): number {
   const raw = process.env.AUGCHATD_PORT ?? process.env.PORT;
   if (!raw) return DEFAULT_PORT;
+  // Strict: parseInt is lenient ("8080abc" → 8080), which silently boots on
+  // the wrong port if the operator typo'd. Require a plain non-negative
+  // integer string up front.
+  if (!/^\d+$/.test(raw)) {
+    throw new BootConfigError(`Invalid port: ${raw}`);
+  }
   const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n <= 0 || n > 65535) {
+  if (n <= 0 || n > 65535) {
     throw new BootConfigError(`Invalid port: ${raw}`);
   }
   return n;

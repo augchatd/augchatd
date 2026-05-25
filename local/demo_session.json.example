@@ -2,7 +2,7 @@
   "user_id": "demo",
   "model": {
     "provider": "openai",
-    "model_id": "gpt-5-mini",
+    "model_id": "gpt-4o-mini",
     "api_key": "sk-replace-me"
   },
   "system_prompt": "You are a helpful assistant. Tweak this per your corpus — the version used in our own dev environment is a strict tool-use prompt that forbids prior-knowledge answers; see spec/src/behavior/contracts/demo-mode.md for the full rationale.",

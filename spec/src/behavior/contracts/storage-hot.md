@@ -22,11 +22,15 @@ links:
 > [!NOTE] Implementation status (partial)
 > Implemented on branch `trace-conversations` for the demo path:
 >
-> - Layout `data/<tenantId>/<userId>.sqlite` with `bun:sqlite`
->   (`PRAGMA journal_mode = WAL`).
+> - Layout `<AUGCHATD_DATA_DIR>/<tenantId>/<userId>.sqlite` with `bun:sqlite`
+>   (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL` — the
+>   WAL-appropriate setting; trades a tiny crash-window for throughput vs.
+>   `synchronous = FULL`).
 > - Schema covers `conversation` (id, session_id, model_id_override),
 >   `connector_state` (the canonical per-conversation active map), and
->   `message` (UIMessage history, parts as JSON).
+>   `message` (UIMessage history, `parts_json` + `metadata_json` — the
+>   metadata column carries per-assistant-message provenance
+>   `{model_id, provider}` rendered by the UI as a model chip).
 > - Writes are atomic; failures throw `HotWriteError` and the chat /
 >   connectors / model handlers surface them as `503
 >   X-Augchatd-Reason: hot-write-failed` per spec.
@@ -81,6 +85,10 @@ A single conversation's per-connector active state (and the messages alongside i
 ## Hot-write failure surface
 
 A hot SQLite write failure during a `PUT /conversations/:cid/connectors/:descriptive_id` or during a first-observation snapshot surfaces to the caller as `503` with `X-Augchatd-Reason: hot-write-failed`. No partial state is committed. This is distinct from the cold-flush stall (`X-Augchatd-Reason: flush-stalled`, see [storage-flush](storage-flush.md)) — they can co-occur on a degraded node but they have different causes and different retry strategies.
+
+## Schema evolution
+
+The schema lives in `src/storage.ts` as a single `CREATE TABLE IF NOT EXISTS …` block plus a `MIGRATIONS` array of forward-only statements (`ALTER TABLE … ADD COLUMN …`). On every `openHotDb`, the block runs (idempotent for already-created tables) and each migration runs inside a swallowing try/catch — SQLite has no `ADD COLUMN IF NOT EXISTS`, so the second-run "duplicate column" error is the expected idempotency signal. Adding a column means appending one statement to `MIGRATIONS`; dropping a column is not supported (forward-only). The schema is not versioned (no `schema_version` row); on-disk databases either have the column or get it on next boot.
 
 ## Non-promises
 

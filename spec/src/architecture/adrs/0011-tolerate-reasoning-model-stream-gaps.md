@@ -3,7 +3,7 @@ id: adr-0011-tolerate-reasoning-model-stream-gaps
 type: adr
 status: proposed
 evidence:
-  - source: src/index.ts
+  - source: src/index.ts@0932e08
     section: "Bun.serve default export — idleTimeout"
 links:
   - relation: supports

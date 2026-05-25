@@ -11,9 +11,21 @@ evidence:
 
 ## What augchatd ships
 
-- **Logs to stderr.** The operator wires their own collector (Loki, CloudWatch, Datadog, etc.).
-- Sanitized log lines — credentials and internal URLs do not appear.
-- **Optional per-conversation JSONL trace.** Enabled by setting `AUGCHATD_TRACE_DIR=/path/to/dir`. When set, each `POST /chat` appends a per-conversation JSONL file (`${conversation_id}.jsonl`) with one event per line: `request`, `step.finish`, `response.finish`, `error`. Off by default; zero filesystem cost when unset. Mode-agnostic. Credentials (`api_key`) are never written. This is a **debug-time conversation dump for the operator** — local files, not OTel, not a tamper-evident audit log; replay-grade rather than compliance-grade.
+- **Logs to stderr** for runtime errors and warnings (`HotWriteError`, connector failures, trace-write failures). The operator wires their own collector (Loki, CloudWatch, Datadog, etc.).
+- **Boot banner and connector-status lines go to stdout** (`augchatd up on :8080 …`; `mcp[…] connected, tools: …`; `rag[…] connected (opensearch), indexes: …`). These are foreground operator signals during startup, not error conditions; stdout keeps them out of any stderr-only collector wired by the operator.
+- Sanitized log lines — connector credentials (`auth.*`) and internal upstream URLs do not appear.
+- **Optional per-conversation JSONL trace.** Enabled by setting `AUGCHATD_TRACE_DIR=/path/to/dir`. When set, each `POST /chat` appends a per-conversation JSONL file (`${conversation_id}.jsonl`) with one event per line: `request`, `step.finish`, `response.finish`, `error`. Off by default; zero filesystem cost when unset (empty string `AUGCHATD_TRACE_DIR=""` is treated as unset). Mode-agnostic. The directory is created at boot; an unwritable path is a refuse-to-start (boot exits 1 with a single-line error — same posture as the demo-session-config validator). The conversation_id file segment is sanitized to `[a-zA-Z0-9._-]` and truncated to 200 chars; server-minted UUIDs pass through unchanged, so collisions only occur if a hostile integrator chose a colliding id (out of scope today). This is a **debug-time conversation dump for the operator** — local files, not OTel, not a tamper-evident audit log; replay-grade rather than compliance-grade.
+
+### Trace event guarantees
+
+- **Event types:** `request` (start of a `POST /chat`), `step.finish` (one per tool-use loop step), `response.finish` (the model produced a final answer), `error` (anything thrown inside the chat handler).
+- **Minimum fields per line:** `ts` (ISO 8601), `type`, `conversation_id`, `session_id`.
+- **Order:** `request` lands before any other event for the same chat call; `step.finish` events arrive in step order; `response.finish` is last on the happy path. `error` can land between any two events.
+- **Append model:** synchronous `appendFileSync` per event — ordering is deterministic, no buffering. A process crash before the kernel flushes the page cache may drop the last write, but never reorders earlier ones.
+- **Redaction scope (canonical):**
+  - `model.api_key` is never serialized.
+  - Connector `auth.*` payloads (bearer / basic / headers) are never serialized — the `request` event lists only `descriptive_id`, `type`, `name`, `default_active`, `active`.
+  - **NOT redacted, by design:** `system_prompt`, the full `messages[]` history, tool call arguments, tool results, RAG hit content, and provider error stack traces. The trace is replay-grade — anyone with access to the file already has access to the upstream calls anyway. Operators who treat trace files as sensitive should restrict the host filesystem accordingly.
 
 ## What augchatd does **not** ship
 
