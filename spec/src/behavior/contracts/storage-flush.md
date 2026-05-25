@@ -17,6 +17,13 @@ links:
 
 # Contract — Flush to cold storage
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this contract vs `src/storage.ts:18-22` (lists flush + multi-session lifecycle as "Still pending"), no `src/*flush*` module exists.
+> - **Nature**: the contract reads prescriptive — disconnect + 5-min idle triggers, retry, hydration on resume — but nothing is wired. `SessionRecord.storage` is held opaquely; there is no flush scheduler, no idle timer, no S3 client, no hydration code path.
+> - **Proposed direction**: ship the flush implementation (issue #9 §C2-C4). Until then this block makes the gap explicit so a reader doesn't infer working code from the prescriptive prose. The `Promise` and `Observable outcomes` sections describe the *intended* contract; treat both as target state.
+> - **Decision owner**: project owner.
+
 ## Promise
 
 A conversation is flushed from hot SQLite to the integrator's S3-compatible bucket on either trigger:

@@ -18,6 +18,13 @@ links:
 
 # ADR 0002 — Hot storage is Bun's embedded SQLite, partitioned per (mTLS tenant, user)
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this ADR's "lifecycle (hard rule)" vs `src/storage.ts:43-44, 91-128` (the `opened` map keeps each DB for the process lifetime; no session-refcount, no close, no tenant-folder GC). The on-disk layout matches; the lifecycle rule is the divergent part.
+> - **Nature**: the layout (`<root>/<tenantId>/<userId>.sqlite`, WAL, one writer lock per user) is shipped. The lifecycle ("file closed and deleted only after all sessions ended AND the user's conversations flushed; tenant folder GC'd when empty") is target state. The corollaries — file disappears on no-active-sessions, tenant folder GC — are not exercised.
+> - **Proposed direction**: ship session refcounting and the close-on-zero path alongside cold flush (issue #9 §C2-C4) — they share infrastructure. Until then the ADR's lifecycle paragraph is target state; the layout paragraph is current.
+> - **Decision owner**: project owner.
+
 ## Context
 
 augchatd needs hot conversation storage that:

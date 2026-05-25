@@ -12,6 +12,13 @@ links:
 
 # ADR 0008 — Demo mode is the same binary, gated by `AUGCHATD_MODE`
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this ADR's Decision §"Default → production: mTLS for `POST /sessions`, no `/demo/*` routes" vs `src/server.ts:36-39` ("Production mode (placeholder until session minting lands)" — only `/healthz` is mounted in prod) and `src/jwt.ts:16-18` ("Production minting (forthcoming with POST /sessions) … not in this commit").
+> - **Nature**: the demo half of the symmetry claim is shipped end-to-end. The production half — mTLS, `POST /sessions`, `DELETE /sessions/:id`, the integrator-page handshake variant — is unimplemented. The "same binary, shared protocol" framing is therefore aspirational on one side. The shape claim ("session-creation payload is identical in demo and prod, only the transport differs") is verifiable today because `local/demo_session.json` does mirror the documented `POST /sessions` body shape.
+> - **Proposed direction**: keep the ADR as the design decision. When production session minting lands (mTLS termination + `POST /sessions` mount + production JWT secret strategy), remove this block. Until then this block makes the half-shipped state visible — a reader trying to integrate against augchatd today gets the demo path and nothing else.
+> - **Decision owner**: project owner.
+
 ## Context
 
 Two needs in tension:

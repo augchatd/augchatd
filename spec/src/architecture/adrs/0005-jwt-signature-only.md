@@ -18,6 +18,13 @@ links:
 
 # ADR 0005 — JWT validation is signature-only; no DB lookup per message
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this ADR's "Immediate revocation available via `DELETE /sessions/:id`" Consequence vs `src/server.ts:33-34` (route not mounted) and the absent `deleteSession()` export in `src/session-registry.ts`. Additionally, `src/jwt.ts:23-27` regenerates the HMAC secret at every process boot — every JWT issued before a restart fails signature verification afterwards, effectively a process-restart mass revocation that the ADR does not name.
+> - **Nature**: the **decision** (signature-only validation, no per-message DB lookup, configurable `ttl_seconds`) is fully shipped and verifiable by source-level review of `src/auth.ts` and `src/jwt.ts`. The two consequences above are not: `DELETE /sessions/:id` is target state, and the per-process secret has an operational consequence (mass revocation on restart) that affects integrators planning around uptime.
+> - **Proposed direction**: keep the decision as-is. When production session minting lands, mount `DELETE /sessions/:id` and add `deleteSession()`; remove the DELETE half of this block then. For the per-process secret: add a paragraph to this ADR's Consequences making the mass-revocation-on-restart explicit (operators planning rolling deploys need to know recovery happens via the same handshake the JWT-expiry path uses; integrator-side caching of an `expires_at` near the boundary will produce a thundering herd of refreshes after a restart).
+> - **Decision owner**: project owner.
+
 ## Context
 
 Streaming chat replies must be cheap per token. A per-message database hit for session validation would impose latency and load that grows with throughput.

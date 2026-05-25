@@ -23,6 +23,13 @@ links:
 
 # Contract — RAG retrieval
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9 §C5)
+> - **Sources in conflict**: this contract's Promise §1 ("hybrid BM25 + kNN, native") + glossary entry + `components.md` diagram vs `src/rag.ts:140-148` (lexical `multi_match best_fields` only; no kNN, no neural pipeline, no embedding step).
+> - **Nature**: hybrid means combining lexical (BM25) with vector (kNN) similarity and merging scores. Today augchatd does BM25 only. The per-RAG-connector `language` hint exists precisely because lexical search cannot bridge languages — a workaround that hybrid would obsolete. Each document also lacks a `knn_vector` field, so even switching the query body to a `hybrid` shape would return zero kNN matches against the current indexes.
+> - **Proposed direction**: phase 1 (this block) makes the divergence explicit without code change. Phases 2 and 3 are tracked separately — phase 2 wires cluster-side embedding via OpenSearch ML Commons (the managed DigitalOcean OpenSearch our demo runs against ships the `opensearch-ml` + `opensearch-knn` + `opensearch-neural-search` plugins pre-installed, but no model is registered and no pipeline configured), and requires re-indexing the corpus through a text-embedding ingest pipeline. Phase 3 adds an optional `embedding: { url, auth, model }` field on the RAG connector for integrators who run a cluster without ML Commons and prefer external embedding.
+> - **Decision owner**: project owner.
+
 ## Promise
 
 When a conversation has one or more **active RAG-type connectors** (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)) and the LLM invokes the retrieval tool exposed by one of them during a chat turn, augchatd:

@@ -12,6 +12,13 @@ links:
 
 # Constraint — Storage durability
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this constraint vs `src/` (zero references to `flush-stalled`; no read-only mode flag on `SessionRecord`; no retry / backoff path).
+> - **Nature**: read-only mode is unreachable today because the flush whose stall would trigger it is itself unimplemented (see PENDING on [storage-flush](../behavior/contracts/storage-flush.md)). Every "hard rule" below ("hot is not dropped until cold has it", retry with exponential backoff, 15-min stall → 503 `X-Augchatd-Reason: flush-stalled`) is target state.
+> - **Proposed direction**: ship cold flush first (issue #9 §C3), then the read-only state machine on top (#9 §C2). This block makes the prescriptive prose visibly not-yet-true.
+> - **Decision owner**: project owner.
+
 ## Hard rules
 
 - **Hot is not dropped until cold has it.** A flush failure does not delete the hot copy.

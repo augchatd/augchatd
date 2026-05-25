@@ -19,6 +19,13 @@ links:
 
 # Contract — Hot storage (embedded SQLite, one DB per (tenant, user))
 
+> [!WARNING] PENDING RECONCILIATION — identifier sanitization
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9 §H1)
+> - **Sources in conflict**: this contract's "one file per (tenantId, userId) pair" + the tenant-isolation invariant vs `src/storage.ts:56-58` (`sanitize()` replaces any non-`[a-zA-Z0-9._-]` char with `_` and truncates at 100 chars). Two distinct integrator-supplied `user_id` values (e.g. `"a/b"` vs `"a_b"`, or two long IDs sharing the first 100 chars) collapse onto the same SQLite file — cross-user data mixing within the same tenant.
+> - **Nature**: in demo this is moot (tenant + user are both literal `"demo"`). With production session minting, an integrator passing an `id` containing `/`, spaces, or any other non-alphanumeric char silently lands in a shared file. The sanitize was added as a safety belt against malicious paths; what it actually does is convert one safety problem (path traversal) into another (silent collision).
+> - **Proposed direction**: reject unsupported characters at session creation (`POST /sessions` 4xx with `invalid_user_id` / `invalid_tenant_id`) instead of sanitizing — same posture as the demo-config validator. Once that lands the sanitize is defense-in-depth, not the user-facing rule. No integrators today, so the tightening is safe.
+> - **Decision owner**: project owner.
+
 > [!NOTE] Implementation status (partial)
 > Implemented on branch `trace-conversations` for the demo path:
 >
