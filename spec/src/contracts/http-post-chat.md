@@ -58,14 +58,14 @@ A Server-Sent Events stream using the Vercel AI SDK data-stream protocol. See [b
 | `401` | `{"error":"missing_jwt"}` \| `{"error":"invalid_jwt"}` \| `{"error":"session_gone"}` | Auth middleware rejected the request — see [contract-jwt-refresh](../behavior/contracts/jwt-refresh.md) PENDING block for `session_gone`. |
 | `503` | `{"error":"hot_write_failed","detail":"…"}` + `X-Augchatd-Reason: hot-write-failed` | A SQLite write failed during conversation auto-create or message persistence. |
 
-**Note on auto-create.** If `id` is unknown to the user's hot SQLite, the handler creates the conversation row before streaming (`getConversation(...) ?? createConversation(...)` in [src/routes/chat.ts](../../../src/routes/chat.ts)). This auto-create is an intentional deviation from a stricter "register first" contract — see the Implementation status note in [contract-connector-toggle](../behavior/contracts/connector-toggle.md). It does NOT apply to `PUT` lanes (see issue #9 §D8 — those tighten to 404 on unknown cid).
+**Note on auto-create.** If `id` is unknown to the user's hot SQLite, the handler creates the conversation row before streaming (`getConversation(...) ?? createConversation(...)` in [src/routes/chat.ts](../../../src/routes/chat.ts)). This auto-create is an intentional deviation from a stricter "register first" contract — see the Implementation status note in [contract-connector-toggle](../behavior/contracts/connector-toggle.md). The PUT lanes (`PUT /conversations/:cid/connectors/:did`, `PUT /conversations/:cid/model`) do NOT auto-create — they return 404 on an unknown cid.
 
 ## Streaming behavior
 
 - The handler returns the response after the request body is parsed and validated. The SSE stream is then driven by `streamText` from the Vercel AI SDK.
 - Stream parts are buffered through `createUIMessageStream` and flushed to the socket as they arrive.
 - An error during streaming is captured in the `onError` callback and written to the per-conversation JSONL trace (see [constraint-observability](../constraints/observability.md)). Once 200 OK has been sent the chat handler cannot retroactively emit a 401 — upstream MCP-401 errors take the "stream sentinel UI part" recovery proposed in [contract-jwt-refresh](../behavior/contracts/jwt-refresh.md)'s PENDING block.
-- Client abort: today the handler does not subscribe to `c.req.raw.signal`, so the LLM call + any in-flight tool calls run to completion after the client disconnects, and the partial assistant message is persisted. Tracked as issue #9 §C8.
+- **Client abort.** The handler subscribes to `c.req.raw.signal` and passes it as `streamText({ abortSignal })`. On client disconnect the AI SDK propagates the signal to the upstream provider call (OpenAI / Anthropic stop generating) and to every tool's `execute(input, { abortSignal })` — `mcp.ts`'s `client.callTool(..., { signal })` and `rag.ts`'s `fetch(..., { signal })` abort their own HTTP traffic. The partial assistant message assembled before the abort is persisted to hot storage (replay sees it as the assistant's reply for that turn). The trace records an `aborted` event instead of `response.finish`.
 
 ## Related
 

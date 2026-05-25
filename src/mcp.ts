@@ -76,11 +76,12 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
     tools[namespaced] = tool({
       description,
       inputSchema: jsonSchema(t.inputSchema as object),
-      execute: async (input) => {
-        const result = (await client.callTool({
-          name: t.name,
-          arguments: input as Record<string, unknown>,
-        })) as unknown;
+      execute: async (input, { abortSignal }) => {
+        const result = (await client.callTool(
+          { name: t.name, arguments: input as Record<string, unknown> },
+          undefined,
+          { signal: abortSignal },
+        )) as unknown;
         return flattenResult(result);
       },
     });

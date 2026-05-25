@@ -158,6 +158,13 @@ export async function chatHandler(c: Context): Promise<Response> {
           session.model.provider,
           modelId,
         ) as Parameters<typeof streamText>[0]["providerOptions"],
+        // Propagate client disconnect to the upstream provider and to any
+        // tool calls in flight. Without this the LLM + every MCP / RAG
+        // fetch run to completion after the browser closes, burning
+        // tokens and connector quota. The AI SDK forwards this signal to
+        // tool.execute()'s second arg too — mcp.ts and rag.ts use it to
+        // abort their own upstream calls.
+        abortSignal: c.req.raw.signal,
         tools: Object.keys(tools).length > 0 ? tools : undefined,
         stopWhen: stepCountIs(MAX_STEPS),
         onStepFinish: (step) => {
@@ -215,12 +222,23 @@ export async function chatHandler(c: Context): Promise<Response> {
           });
         },
         onError: ({ error }) => {
+          // Client-disconnect surfaces here as an AbortError (the
+          // abortSignal above propagates from the request). Tag it
+          // distinctly so trace consumers can tell "user closed the
+          // tab" from "provider exploded" without a regex on the
+          // message body.
+          const isAbort =
+            error instanceof Error &&
+            (error.name === "AbortError" ||
+              error.message.toLowerCase().includes("aborted"));
           writeTraceEvent(conversationId, {
-            type: "error",
+            type: isAbort ? "aborted" : "error",
             conversation_id: conversationId,
             session_id: session.session_id,
             message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
+            ...(isAbort
+              ? {}
+              : { stack: error instanceof Error ? error.stack : undefined }),
           });
         },
       });

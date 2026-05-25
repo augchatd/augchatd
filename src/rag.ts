@@ -119,7 +119,7 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
       required: ["query"],
       additionalProperties: false,
     }),
-    execute: async (rawInput, { toolCallId }) => {
+    execute: async (rawInput, { toolCallId, abortSignal }) => {
       const input = rawInput as { query: string; top_k?: number };
       const top_k = Math.min(20, Math.max(1, input.top_k ?? DEFAULT_TOP_K));
       const body = {
@@ -151,6 +151,7 @@ async function connectRag(c: RagConnector): Promise<ConnectedRag> {
         method: "POST",
         headers: baseHeaders,
         body: JSON.stringify(body),
+        signal: abortSignal,
       });
       if (!r.ok) {
         const text = await r.text().catch(() => "");
