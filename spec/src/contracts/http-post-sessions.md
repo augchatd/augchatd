@@ -14,13 +14,6 @@ links:
 
 # Technical contract — `POST /sessions`
 
-> [!WARNING] PENDING RECONCILIATION
-> - **Detected**: 2026-05-25 by /code-changed (demo-config consolidation refactor)
-> - **Sources in conflict**: this contract's `storage.s3` example (a single URI string `"s3://AKIA...@your-bucket/"`) vs the new demo session template `local/demo_session.json.example`, which renders `storage.s3` as a structured object with `endpoint`, `region`, `bucket`, `prefix`, `access_key_id`, `secret_access_key`.
-> - **Nature**: the demo-mode refactor promised that `local/demo_session.json` mirrors this production payload literally — so an integrator can lift the demo file straight into their POST body when graduating. The two shapes now disagree. The URI form cannot carry the explicit `endpoint` that S3-compatible providers (DigitalOcean Spaces, MinIO, Backblaze B2) require, and embedding credentials in the URL conflicts with most secret-management practices.
-> - **Proposed direction**: update this contract's `storage.s3` example and required-field list to match the structured-object form (the same shape the demo template ships). The URI variant in the README/contract was an early-scaffold placeholder predating any actual cold-storage implementation; the structured form is what `contract-storage-flush` will need anyway. Propagate to `spec/src/behavior/flows/session-setup.md`, `spec/src/domain/concepts.md`, `README.md`, and `spec/views/user-stories/0001-backend-creates-session.md`.
-> - **Decision owner**: project owner (Tiago).
-
 ## Auth
 
 **mTLS.** Client certificate is required and identifies the mTLS tenant — used to partition **hot** storage. Cold storage is specified per session via `storage.s3` and is not partitioned by the mTLS tenant.
@@ -62,7 +55,16 @@ links:
       "auth":           { "bearer": "ghu_..." }
     }
   ],
-  "storage": { "s3": "s3://AKIA...@your-bucket/" }
+  "storage": {
+    "s3": {
+      "endpoint":          "https://s3.us-east-1.amazonaws.com",
+      "region":            "us-east-1",
+      "bucket":            "your-bucket",
+      "prefix":            "ai-chat-storage/",
+      "access_key_id":     "AKIA...",
+      "secret_access_key": "..."
+    }
+  }
 }
 ```
 
@@ -71,7 +73,20 @@ links:
 - `user_id`
 - `system_prompt`
 - `model` (`provider`, `model_id`, `api_key`)
-- `storage.s3`
+- `storage.s3` (`endpoint`, `region`, `bucket`, `access_key_id`, `secret_access_key`; `prefix` optional, defaults to `""`)
+
+### `storage.s3` sub-fields
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `endpoint` | string | Full HTTPS URL of the S3-compatible API. Required so non-AWS providers (DigitalOcean Spaces, MinIO, Backblaze B2, Cloudflare R2, …) work — there is no global "S3 endpoint" to derive from region alone. For AWS itself, use the regional endpoint like `https://s3.us-east-1.amazonaws.com`. |
+| `region` | string | Bucket's region, e.g. `"us-east-1"`, `"fra1"` for DO Spaces. Some SDKs require it even when the endpoint is explicit; passed through to the S3 client. |
+| `bucket` | string | Bucket name. Not partitioned by mTLS tenant — the bucket itself is the cold partition (see [domain/concepts](../domain/concepts.md)). |
+| `prefix` | string (optional, default `""`) | Object-key prefix prepended to every flushed conversation, e.g. `"ai-chat-storage/"`. Useful for sharing a bucket between augchatd and other workloads. |
+| `access_key_id` | string | S3 access-key id. Held in the in-memory session registry; never logged. |
+| `secret_access_key` | string | S3 secret. Same. |
+
+Why an object and not a single URI string: S3-compatible providers split endpoint from credentials (most secret-managers refuse to embed credentials in URLs), and the `endpoint` cannot be derived from a bucket name on non-AWS providers. The demo template at `local/demo_session.json.example` ships the same shape so the demo config is a literal preview of this body.
 
 ### Optional fields
 

@@ -20,7 +20,7 @@ curl -X POST https://augchatd.your-infra/sessions \
       { "descriptive_id": "mcp_github",  "name": "GitHub (user OAuth)", "type": "mcp", "default_active": true,
         "url": "https://your-mcp/", "auth": { "bearer": "..." } }
     ],
-    "storage":     { "s3": "s3://AKIA...@your-bucket/" }
+    "storage":     { "s3": { "endpoint": "https://s3.us-east-1.amazonaws.com", "region": "us-east-1", "bucket": "your-bucket", "access_key_id": "AKIA...", "secret_access_key": "..." } }
   }'
 # → { "session_id": "...", "jwt": "eyJ...", "expires_at": "..." }
 ```
