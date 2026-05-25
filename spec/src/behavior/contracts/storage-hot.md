@@ -85,6 +85,12 @@ Each conversation in the file holds, alongside its messages, the **per-conversat
 - A session ending while another for the same user remains alive does **not** remove the file.
 - Process restart preserves the hot DB (it is on disk, not memory-only).
 
+## Conversations are scoped to `(tenant, user)`, not to a session
+
+A user's conversations live in their `<tenantId>/<userId>.sqlite` file and are observable to **every** session that authenticates as the same `(tenantId, userId)`. A second session minted for the same user — refresh after JWT expiry, second browser tab, mobile re-open, integrator-driven re-mint after a forced delete — sees the prior conversations as soon as it authenticates; `GET /conversations/:cid/messages` returns the saved history and the conversation's per-connector active state is intact. There is **no per-session isolation** within a `(tenant, user)`.
+
+This is the contract that makes "resume after disconnect" work end-to-end. The implicit cross-session-share is also the auth boundary for the `/c/<cid>` URL: a cid that exists for a different `(tenant, user)` resolves to `conversation_not_found` (404) because the SQLite partition does not contain that row — no explicit cross-session check is needed in routing. Integrators who need session-level isolation should provision distinct `user_id` values; augchatd does not deduplicate or merge across users.
+
 ## Canonical row, no per-session cache
 
 A single conversation's per-connector active state (and the messages alongside it) lives in **one** row per `(cid, descriptive_id)` in the user's SQLite file. `PUT /conversations/:cid/connectors/:descriptive_id` writes to that canonical row; idle/disconnect flush reads the canonical row at flush time. Implementations MUST NOT carry a per-session in-memory cache of the active map that flush could write back over a recent `PUT`. This makes multi-device toggles (same user, two device sessions, one toggling while the other is about to flush) behave under the same last-write-wins rule as concurrent toggles on a single device.
