@@ -5,19 +5,29 @@ export type AugchatdMode = "demo" | "prod";
 
 export type UiTheme = "light" | "dark";
 
+const DEMO_SESSION_FILE = "local/demo_session.json";
+
 /**
- * Resolved demo-mode config. In demo, all per-session fields (model, prompt,
- * storage, connectors, theme) come from a JSON file on disk that mirrors the
- * shape of the production `POST /sessions` body — so the local config is a
- * literal preview of what an integrator would send over HTTP. See
- * [contract-demo-mode](../spec/src/behavior/contracts/demo-mode.md) and
- * [contract-session-create](../spec/src/behavior/contracts/session-create.md).
+ * Raised on any boot-time configuration problem the user can fix (missing
+ * file, malformed JSON, wrong field type). `src/index.ts` catches this and
+ * prints just `err.message` — no stack — so the friendly hint doesn't get
+ * buried in a Bun trace.
+ */
+export class BootConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BootConfigError";
+  }
+}
+
+/**
+ * Resolved demo-mode session payload. The shape mirrors the production
+ * `POST /sessions` body literally — `local/demo_session.json` is a working
+ * preview of what an integrator would send over HTTP. See
+ * [contract-demo-mode] and [contract-session-create] under `spec/`.
  *
- * `ttl_seconds` is the only field that stays an env var: JWT lifetime is a
- * server-deployment concern, not a per-session payload concern.
- *
- * `storage` is held opaquely until contract-storage-flush lands and parses it;
- * boot only checks presence (object) vs absence (hot-only).
+ * `storage` is held opaquely until contract-storage-flush parses it; boot
+ * only checks presence (object) vs absence (hot-only).
  */
 export interface DemoModeConfig {
   user_id: string;
@@ -25,7 +35,6 @@ export interface DemoModeConfig {
   system_prompt: string;
   storage: Record<string, unknown> | undefined;
   connectors: Connector[];
-  ttl_seconds: number;
   theme: UiTheme;
 }
 
@@ -34,17 +43,22 @@ export interface BootConfig {
   port: number;
   demo: DemoModeConfig | undefined;
   /**
+   * JWT lifetime in seconds for demo-minted sessions. Deployment-level, not
+   * per-session: production decides this in code, not in the integrator's
+   * `POST /sessions` body. Demo reads `DEMO_TTL_SECONDS` (default 60).
+   */
+  demo_ttl_seconds: number;
+  /**
    * Directory where per-conversation JSONL traces are appended. Unset =
-   * tracing disabled (no overhead). Mode-agnostic: works in demo and
-   * prod. Read from AUGCHATD_TRACE_DIR; the directory is created at
-   * boot if absent.
+   * tracing disabled (no overhead). Mode-agnostic.
    */
   trace_dir: string | undefined;
 }
 
 const DEFAULT_PORT = 8080;
 const DEFAULT_DEMO_TTL_SECONDS = 60;
-const DEFAULT_DEMO_SESSION_FILE = "local/demo_session.json";
+
+const PLACEHOLDER_API_KEYS = new Set(["sk-replace-me", "REPLACE_ME"]);
 
 export function loadBootConfig(): BootConfig {
   const mode = readMode();
@@ -52,6 +66,7 @@ export function loadBootConfig(): BootConfig {
     mode,
     port: readPort(),
     demo: mode === "demo" ? readDemoConfig() : undefined,
+    demo_ttl_seconds: readDemoTtl(),
     trace_dir: readTraceDir(),
   };
 }
@@ -65,7 +80,17 @@ function readPort(): number {
   if (!raw) return DEFAULT_PORT;
   const n = Number.parseInt(raw, 10);
   if (Number.isNaN(n) || n <= 0 || n > 65535) {
-    throw new Error(`Invalid port: ${raw}`);
+    throw new BootConfigError(`Invalid port: ${raw}`);
+  }
+  return n;
+}
+
+function readDemoTtl(): number {
+  const raw = process.env.DEMO_TTL_SECONDS;
+  if (!raw) return DEFAULT_DEMO_TTL_SECONDS;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n) || n <= 0) {
+    throw new BootConfigError(`Invalid DEMO_TTL_SECONDS: ${raw}`);
   }
   return n;
 }
@@ -77,119 +102,115 @@ function readTraceDir(): string | undefined {
     mkdirSync(raw, { recursive: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`AUGCHATD_TRACE_DIR could not be created at '${raw}': ${msg}`);
+    throw new BootConfigError(`AUGCHATD_TRACE_DIR could not be created at '${raw}': ${msg}`);
   }
   return raw;
 }
 
 function readDemoConfig(): DemoModeConfig {
-  const path = process.env.DEMO_SESSION_FILE ?? DEFAULT_DEMO_SESSION_FILE;
-  const text = readSessionFile(path);
+  let text: string;
+  try {
+    text = readFileSync(DEMO_SESSION_FILE, "utf-8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw new BootConfigError(missingSessionFileMessage());
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new BootConfigError(`demo session config at ${DEMO_SESSION_FILE} could not be read: ${msg}`);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    throw new Error(`${path}: not valid JSON (${(e as Error).message})`);
+    throw new BootConfigError(`${DEMO_SESSION_FILE}: not valid JSON (${(e as Error).message})`);
   }
-  return validateSession(parsed, path);
+  return validateSession(parsed);
 }
 
-function readSessionFile(path: string): string {
-  try {
-    return readFileSync(path, "utf-8");
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      throw new Error(missingSessionFileMessage(path));
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`demo session config at ${path} could not be read: ${msg}`);
-  }
-}
-
-function missingSessionFileMessage(path: string): string {
-  const template = `${DEFAULT_DEMO_SESSION_FILE}.example`;
+function missingSessionFileMessage(): string {
   return [
     ``,
-    `Demo session config not found at ${path}.`,
+    `Demo session config not found at ${DEMO_SESSION_FILE}.`,
     ``,
-    `A template is committed at ${template}. Copy it:`,
+    `A template is committed at ${DEMO_SESSION_FILE}.example. Copy it:`,
     ``,
-    `    cp ${template} ${path}`,
+    `    cp ${DEMO_SESSION_FILE}.example ${DEMO_SESSION_FILE}`,
     ``,
-    `Then edit ${path} and fill in your model API key, S3 credentials,`,
-    `and connector list. See README → "Local development" for a field-by-field`,
-    `walkthrough; the file shape mirrors the production POST /sessions body.`,
+    `Then edit ${DEMO_SESSION_FILE} and fill in your model API key, S3`,
+    `credentials, and connector list. See CONTRIBUTING.md → "Local development"`,
+    `for the field-by-field walkthrough; the file shape mirrors the production`,
+    `POST /sessions body.`,
     ``,
   ].join("\n");
 }
 
-function validateSession(value: unknown, path: string): DemoModeConfig {
+function validateSession(value: unknown): DemoModeConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${path}: must be a JSON object`);
+    fail("the session config must be a JSON object");
   }
   const o = value as Record<string, unknown>;
 
-  const user_id = reqString(o, "user_id", path);
-  const system_prompt = reqString(o, "system_prompt", path);
-  const model = reqModel(o["model"], path);
-  const connectors = parseConnectors(o["connectors"]);
-  const storage = optObject(o["storage"], "storage", path);
-  const theme = readTheme(o["theme"], path);
+  const user_id = reqString(o["user_id"], "user_id");
+  const system_prompt = reqString(o["system_prompt"], "system_prompt");
+  const model = reqModel(o["model"]);
 
-  return {
-    user_id,
-    model,
-    system_prompt,
-    storage,
-    connectors,
-    ttl_seconds: readDemoTtl(),
-    theme,
-  };
-}
-
-function reqString(o: Record<string, unknown>, key: string, path: string): string {
-  const v = o[key];
-  if (typeof v !== "string" || v.length === 0) {
-    throw new Error(`${path}: field "${key}" must be a non-empty string`);
+  // `storage` is optional and opaque; contract-storage-flush will parse it.
+  // Demo accepts undefined (hot-only) or any object.
+  const storageRaw = o["storage"];
+  let storage: Record<string, unknown> | undefined;
+  if (storageRaw === undefined) {
+    storage = undefined;
+  } else if (typeof storageRaw !== "object" || storageRaw === null || Array.isArray(storageRaw)) {
+    fail(`"storage" must be an object when set`);
+  } else {
+    storage = storageRaw as Record<string, unknown>;
   }
-  return v;
+
+  const connectors = parseConnectors(o["connectors"]);
+
+  // theme is optional; default light.
+  const themeRaw = o["theme"];
+  let theme: UiTheme;
+  if (themeRaw === undefined) {
+    theme = "light";
+  } else if (themeRaw === "light" || themeRaw === "dark") {
+    theme = themeRaw;
+  } else {
+    fail(`"theme" must be "light" or "dark" (got ${JSON.stringify(themeRaw)})`);
+  }
+
+  return { user_id, model, system_prompt, storage, connectors, theme };
 }
 
-function reqModel(value: unknown, path: string): DemoModeConfig["model"] {
+function reqString(value: unknown, key: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    fail(`"${key}" must be a non-empty string`);
+  }
+  return value as string;
+}
+
+function reqModel(value: unknown): DemoModeConfig["model"] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${path}: field "model" must be an object`);
+    fail(`"model" must be an object`);
   }
   const m = value as Record<string, unknown>;
-  return {
-    provider: reqString(m, "provider", `${path}.model`),
-    model_id: reqString(m, "model_id", `${path}.model`),
-    api_key: reqString(m, "api_key", `${path}.model`),
-  };
-}
-
-function optObject(
-  value: unknown,
-  key: string,
-  path: string,
-): Record<string, unknown> | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${path}: field "${key}" must be an object when set`);
+  const provider = reqString(m["provider"], "model.provider");
+  const model_id = reqString(m["model_id"], "model.model_id");
+  const api_key = reqString(m["api_key"], "model.api_key");
+  // Catch the most common first-run mistake: copying the template and
+  // forgetting to swap the placeholder. Without this, boot succeeds and the
+  // very first chat 401s from the upstream provider — opaque and slow to
+  // diagnose.
+  if (PLACEHOLDER_API_KEYS.has(api_key)) {
+    fail(
+      `"model.api_key" still has the template placeholder ("${api_key}"). ` +
+        `Edit ${DEMO_SESSION_FILE} and set your real API key.`,
+    );
   }
-  return value as Record<string, unknown>;
+  return { provider, model_id, api_key };
 }
 
-function readTheme(value: unknown, path: string): UiTheme {
-  if (value === undefined) return "light";
-  if (value === "light" || value === "dark") return value;
-  throw new Error(`${path}: field "theme" must be "light" or "dark" (got ${JSON.stringify(value)})`);
-}
-
-function readDemoTtl(): number {
-  const raw = process.env.DEMO_TTL_SECONDS;
-  if (!raw) return DEFAULT_DEMO_TTL_SECONDS;
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n) || n <= 0) return DEFAULT_DEMO_TTL_SECONDS;
-  return n;
+function fail(detail: string): never {
+  throw new BootConfigError(`${DEMO_SESSION_FILE}: ${detail}`);
 }

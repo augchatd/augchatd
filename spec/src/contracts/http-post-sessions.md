@@ -14,6 +14,13 @@ links:
 
 # Technical contract — `POST /sessions`
 
+> [!WARNING] PENDING RECONCILIATION
+> - **Detected**: 2026-05-25 by /code-changed (demo-config consolidation refactor)
+> - **Sources in conflict**: this contract's `storage.s3` example (a single URI string `"s3://AKIA...@your-bucket/"`) vs the new demo session template `local/demo_session.json.example`, which renders `storage.s3` as a structured object with `endpoint`, `region`, `bucket`, `prefix`, `access_key_id`, `secret_access_key`.
+> - **Nature**: the demo-mode refactor promised that `local/demo_session.json` mirrors this production payload literally — so an integrator can lift the demo file straight into their POST body when graduating. The two shapes now disagree. The URI form cannot carry the explicit `endpoint` that S3-compatible providers (DigitalOcean Spaces, MinIO, Backblaze B2) require, and embedding credentials in the URL conflicts with most secret-management practices.
+> - **Proposed direction**: update this contract's `storage.s3` example and required-field list to match the structured-object form (the same shape the demo template ships). The URI variant in the README/contract was an early-scaffold placeholder predating any actual cold-storage implementation; the structured form is what `contract-storage-flush` will need anyway. Propagate to `spec/src/behavior/flows/session-setup.md`, `spec/src/domain/concepts.md`, `README.md`, and `spec/views/user-stories/0001-backend-creates-session.md`.
+> - **Decision owner**: project owner (Tiago).
+
 ## Auth
 
 **mTLS.** Client certificate is required and identifies the mTLS tenant — used to partition **hot** storage. Cold storage is specified per session via `storage.s3` and is not partitioned by the mTLS tenant.

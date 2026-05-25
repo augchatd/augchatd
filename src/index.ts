@@ -1,11 +1,25 @@
-import { loadBootConfig } from "./env.ts";
+import { BootConfigError, loadBootConfig } from "./env.ts";
 import { createApp } from "./server.ts";
 import { initMcpConnectors } from "./mcp.ts";
 import { initRagConnectors } from "./rag.ts";
 import { initTrace } from "./trace.ts";
 import { initStorageForDemo } from "./storage.ts";
 
-const config = loadBootConfig();
+function bootOrDie<T>(load: () => T): T {
+  try {
+    return load();
+  } catch (err) {
+    // Print the friendly message verbatim — no stack — so the missing-file
+    // hint and field-validation pointers don't get buried in a Bun trace.
+    if (err instanceof BootConfigError) {
+      console.error(err.message);
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
+const config = bootOrDie(loadBootConfig);
 
 initTrace(config.trace_dir);
 
@@ -32,7 +46,7 @@ const app = createApp(config);
 console.log(`augchatd up on :${config.port} (mode=${config.mode})`);
 if (config.mode === "demo" && config.demo) {
   console.log(`  demo: open http://localhost:${config.port}/demo/`);
-  console.log(`  demo: ttl_seconds=${config.demo.ttl_seconds}`);
+  console.log(`  demo: ttl_seconds=${config.demo_ttl_seconds}`);
   console.log(`  demo: model=${config.demo.model.provider}/${config.demo.model.model_id}`);
   console.log(
     `  demo: cold storage=${config.demo.storage ? "configured" : "hot-only"}`,

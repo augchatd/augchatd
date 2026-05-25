@@ -48,7 +48,7 @@ Given I have a working demo
 Given augchatd is running with AUGCHATD_MODE=demo
  When something (a confused operator, a misrouted production caller, a probe) attempts POST /sessions
  Then augchatd returns 404
-  And the only session that exists is the boot-time demo session
+  And the only sessions that exist are the ones minted by POST /demo/sessions calls so far
   And no per-request provisioning happens
 ```
 

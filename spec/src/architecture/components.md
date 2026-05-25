@@ -19,8 +19,9 @@ augchatd process
 │   │     GET  /demo, /demo/*   ← wrapper page (iframes the UI, runs the
 │   │                              postMessage handshake; wildcard so
 │   │                              /demo/c/<cid> resolves there too)
-│   │     POST /demo/sessions   ← mint a fresh session from env (same
-│   │                              shape as POST /sessions response)
+│   │     POST /demo/sessions   ← mint a fresh session from the
+│   │                              boot-loaded local/demo_session.json
+│   │                              (same shape as POST /sessions response)
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
 │   ├── JWT endpoints: chat, conversation CRUD,
 │   │                   GET /conversations/:cid/connectors (active per conversation),

@@ -26,7 +26,8 @@ import type { BootConfig } from "./env.ts";
  *                              POST /demo/sessions. The wildcard lets
  *                              /demo/c/<cid> resolve to the same page
  *                              so reloads preserve the conversation.
- *   - POST /demo/sessions   — exposed; mints a fresh session from env
+ *   - POST /demo/sessions   — exposed; mints a fresh session from the
+ *                              boot-loaded local/demo_session.json
  *   - POST /chat            — exposed (JWT bearer; session from
  *                              POST /demo/sessions)
  *   - POST /sessions        — NOT mounted (returns 404 by default)
@@ -46,7 +47,7 @@ export function createApp(config: BootConfig): Hono {
 
   if (config.mode === "demo" && config.demo) {
     // Specific routes first so they win over the wildcard below.
-    app.post("/demo/sessions", demoSessionsHandler(config.demo));
+    app.post("/demo/sessions", demoSessionsHandler(config.demo, config.demo_ttl_seconds));
     // Explicit 404 for the removed legacy endpoint — otherwise the
     // wildcard below would happily serve the wrapper HTML at this
     // URL, which is confusing for anyone with cached docs / scripts.

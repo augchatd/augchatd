@@ -25,7 +25,7 @@ export interface SessionRecord {
   /**
    * Cold-storage config from the session payload. Opaque until
    * contract-storage-flush parses it; today the boot log just notes
-   * whether it was supplied (S3 configured vs hot-only).
+   * whether it was supplied (configured vs hot-only).
    */
   storage: Record<string, unknown> | undefined;
   /** Typed connectors[]; empty if the session didn't declare any. */

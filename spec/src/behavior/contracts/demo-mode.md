@@ -52,9 +52,9 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 
 ## Non-promises
 
-- Demo mode is **single-tenant** (`tenantId = "demo"`, `userId = "demo"`).
+- Demo mode is **single-tenant** (`tenantId` hardcoded to `"demo"`); `userId` flows through from `local/demo_session.json` so multiple developers can keep their own per-user hot SQLite under `data/demo/<userId>.sqlite`.
 - Demo mode holds credentials in process memory, loaded once at boot from a JSON file on disk (no secret manager).
-- Demo mode does not negotiate per-end-user provisioning — every `POST /demo/sessions` returns a session bound to the same env-supplied model/connectors/system prompt.
+- Demo mode does not negotiate per-end-user provisioning — every `POST /demo/sessions` returns a session bound to the same config-supplied model/connectors/system prompt.
 - Demo mode is for local testing and public demos only — not a production path.
 - Demo sessions accumulate in the in-memory registry over the process lifetime (one per `POST /demo/sessions` call). Eviction is out of scope for demo; in production, the lifecycle contract handles this (see [contract-storage-hot](storage-hot.md)).
 

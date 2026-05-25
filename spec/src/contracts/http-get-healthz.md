@@ -52,7 +52,7 @@ or
 
 ## Why `mode` is the safety surface
 
-A deploy of augchatd into production with `AUGCHATD_MODE=demo` still set is a real failure mode (bypasses mTLS, single-tenant, credentials from env). The `mode` field is the gate operators put in their deployment pipeline: a production health check that returns `"mode": "demo"` must fail the deploy.
+A deploy of augchatd into production with `AUGCHATD_MODE=demo` still set is a real failure mode (bypasses mTLS, single-tenant, credentials loaded from a file on disk instead of an mTLS-authenticated session payload). The `mode` field is the gate operators put in their deployment pipeline: a production health check that returns `"mode": "demo"` must fail the deploy.
 
 ## Failure modes
 
