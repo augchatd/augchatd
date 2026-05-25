@@ -143,14 +143,3 @@ export function initStorageForDemo(): void {
   openHotDb("demo", "demo");
 }
 
-/** Close all open DBs — call on shutdown if you want clean WAL checkpoints. */
-export function closeAllStorage(): void {
-  for (const db of opened.values()) {
-    try {
-      db.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  opened.clear();
-}

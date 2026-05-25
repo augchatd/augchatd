@@ -48,15 +48,6 @@ export async function listSessionModelsHandler(c: Context): Promise<Response> {
   }
 }
 
-/** For PUT /conversations/:cid/model to validate the requested id. */
-export function lookupKnownModel(
-  session: SessionRecord,
-  model_id: string,
-): ProviderModel | undefined {
-  const key = `${session.session_id}:${session.model.provider}`;
-  return cache.get(key)?.models.find((m) => m.id === model_id);
-}
-
 /** Force-fetch so a PUT can validate even before any GET has happened. */
 export async function ensureModelsCached(session: SessionRecord): Promise<ProviderModel[]> {
   const key = `${session.session_id}:${session.model.provider}`;
