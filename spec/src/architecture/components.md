@@ -28,9 +28,12 @@ augchatd process
 │   └── static UI serving (same origin, /)
 │
 ├── Session registry (in-memory)
-│   └── { session_id → { user_id, model+key, connectors[] (resolved scope), storage, ttl } }
-│        each connector: { descriptive_id, name, type, default_active, type-specific config }
+│   └── { session_id → { tenant_id, user_id, system_prompt, model+key,
+│                         s3_uri, connectors[] (resolved scope), theme } }
+│        each connector: { descriptive_id, name, type, default_active,
+│                          description?, type-specific config }
 │        — active flag lives per conversation in hot SQLite, not here
+│        — JWT TTL is encoded in the JWT itself (exp), not stored here
 │
 ├── Tool-use loop
 │   ├── LLM driver (Vercel AI SDK; Anthropic, OpenAI, …)
