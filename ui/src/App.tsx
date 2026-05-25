@@ -196,38 +196,18 @@ async function resolveBootConversation(jwt: string): Promise<BootState> {
   return { cid: conversation_id, initialMessages: [] };
 }
 
-/**
- * Update the iframe's internal route AND tell the parent window so the
- * parent can persist it (the demo wrapper writes it to its URL fragment,
- * so a hard reload preserves the conversation). For top-level use
- * (no parent), behaves as a plain replaceState.
- */
+/** Update the iframe's route and notify the parent so it can mirror the path. */
 function setIframeRoute(path: string): void {
   window.history.replaceState(null, "", path);
-  if (window.parent !== window) {
-    window.parent.postMessage(
-      { type: "augchatd:route", path },
-      window.location.origin,
-    );
-  }
+  window.parent.postMessage(
+    { type: "augchatd:route", path },
+    window.location.origin,
+  );
 }
 
 /**
- * iframe ↔ parent JWT handshake (contract-ui-handshake).
- *
- *   iframe → parent: postMessage({type:'augchatd:ready'})
- *   parent → iframe: postMessage({type:'augchatd:jwt', jwt, theme})
- *
- * Re-callable: each call posts a new `augchatd:ready` and resolves on
- * the next matching `augchatd:jwt`. Used both for first boot and for
- * 401 recovery.
- *
- * Origin check is same-origin (`window.location.origin`). In demo the
- * wrapper page is same-origin with this iframe, so this is correct. In
- * production the parent will be a different origin — the cross-origin
- * variant of this check requires the iframe to learn the expected
- * integrator origin (e.g. via a query param on its src). Tracked
- * separately; not blocking the demo.
+ * iframe ↔ parent handshake (contract-ui-handshake). Re-callable — each
+ * call requests a fresh JWT, so 401 recovery uses the same code path.
  */
 function requestJwtFromParent(
   timeoutMs = 10000,

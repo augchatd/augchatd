@@ -38,9 +38,10 @@ const DEMO_PAGE_HTML = `<!doctype html>
 <iframe id="app" title="augchatd demo"></iframe>
 <script>
 (() => {
+  const PREFIX = '/demo';
   const iframe = document.getElementById('app');
   const origin = window.location.origin;
-  function fail(msg) {
+  function showFatalError(msg) {
     const el = document.createElement('div');
     el.className = 'err';
     el.textContent = 'augchatd demo: ' + msg;
@@ -54,36 +55,29 @@ const DEMO_PAGE_HTML = `<!doctype html>
       session = await r.json();
     } catch (e) {
       console.error('demo: failed to mint session', e);
-      fail('failed to mint session — ' + (e && e.message ? e.message : e));
+      showFatalError('failed to mint session — ' + (e && e.message ? e.message : e));
       return;
     }
-    if (!iframe.contentWindow) return;
     iframe.contentWindow.postMessage(
       { type: 'augchatd:jwt', jwt: session.jwt, theme: session.theme },
       origin,
     );
   }
-  // Restore the iframe's previous route from the parent URL pathname.
-  // /demo/c/<cid> on the parent maps to /c/<cid> on the iframe; /demo or
-  // /demo/ maps to /. Using a real path (not a fragment) means it shows
-  // up in server logs — handy for debugging and support.
+  // Real path (not fragment) so the conversation id shows up in server logs.
   function iframePathFromParent() {
-    var p = window.location.pathname; // '/demo', '/demo/', or '/demo/c/<cid>'
-    if (p === '/demo' || p === '/demo/') return '/';
-    if (p.indexOf('/demo/') === 0) return p.slice(5);
+    const p = window.location.pathname;
+    if (p === PREFIX || p === PREFIX + '/') return '/';
+    if (p.indexOf(PREFIX + '/') === 0) return p.slice(PREFIX.length);
     return '/';
   }
   window.addEventListener('message', (e) => {
     if (e.origin !== origin) return;
-    var d = e.data;
+    const d = e.data;
     if (!d) return;
     if (d.type === 'augchatd:ready') {
       mintAndSend();
     } else if (d.type === 'augchatd:route' && typeof d.path === 'string') {
-      // The iframe navigated internally (e.g. minted a new conversation).
-      // Mirror it into the parent URL pathname so the next reload picks
-      // it up via iframePathFromParent(). /c/<cid> → /demo/c/<cid>.
-      var newPath = d.path === '/' ? '/demo/' : '/demo' + d.path;
+      const newPath = d.path === '/' ? PREFIX + '/' : PREFIX + d.path;
       if (newPath !== window.location.pathname) {
         window.history.replaceState(null, '', newPath);
       }
