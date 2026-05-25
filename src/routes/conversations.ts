@@ -110,14 +110,15 @@ export async function setConversationConnectorStateHandler(c: Context): Promise<
     return c.json({ error: "active_must_be_boolean" }, 400);
   }
 
-  const recordOrRes = tryHotWrite(
-    c,
-    () => getConversation(cid, session) ?? createConversation(session, cid),
-  );
-  if (recordOrRes instanceof Response) return recordOrRes;
+  // PUT does NOT auto-create the conversation (per contract-connector-toggle
+  // §Observable outcomes: "PUT /conversations/:unknown_cid/... returns 404").
+  // Auto-create lives on POST /conversations and POST /chat; PUTs require an
+  // already-known cid.
+  const record = getConversation(cid, session);
+  if (!record) return c.json({ error: "conversation_not_found" }, 404);
 
   const setOrRes = tryHotWrite(c, () =>
-    setConnectorActive(recordOrRes, session, did, active),
+    setConnectorActive(record, session, did, active),
   );
   if (setOrRes instanceof Response) return setOrRes;
   if (!setOrRes.ok) return c.json({ error: setOrRes.reason }, 404);
@@ -149,11 +150,10 @@ export async function setConversationModelHandler(c: Context): Promise<Response>
     return c.json({ error: "model_id_must_be_non_empty_string" }, 400);
   }
 
-  const recordOrRes = tryHotWrite(
-    c,
-    () => getConversation(cid, session) ?? createConversation(session, cid),
-  );
-  if (recordOrRes instanceof Response) return recordOrRes;
+  // Symmetric with the connector-toggle PUT: do not auto-create the
+  // conversation on an unknown cid. Returns 404 instead.
+  const record = getConversation(cid, session);
+  if (!record) return c.json({ error: "conversation_not_found" }, 404);
 
   let known;
   try {
@@ -166,7 +166,7 @@ export async function setConversationModelHandler(c: Context): Promise<Response>
   if (!known) return c.json({ error: "unknown_model_id" }, 400);
 
   const setOrRes = tryHotWrite(c, () =>
-    setConversationModel(recordOrRes, session, model_id),
+    setConversationModel(record, session, model_id),
   );
   if (setOrRes instanceof Response) return setOrRes;
   return new Response(null, { status: 204 });

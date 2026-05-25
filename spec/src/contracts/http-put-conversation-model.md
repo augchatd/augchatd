@@ -45,6 +45,7 @@ The override is persisted to hot SQLite per `(tenant, user)` on the `conversatio
 | `400` | `{ "error": "model_id_must_be_non_empty_string" }` | `model_id` is empty, missing, or not a string. |
 | `400` | `{ "error": "unknown_model_id" }` | `model_id` is not in the session's current `GET /session/models` list. |
 | `401` | `{ "error": "..." }` | Missing / invalid / expired JWT (per [jwt-refresh](../behavior/contracts/jwt-refresh.md)). |
+| `404` | `{ "error": "conversation_not_found" }` | `:conversation_id` is unknown for this user. PUTs do **not** auto-create the conversation — register the cid via `POST /conversations` or a prior `POST /chat` first. |
 | `502` | `{ "error": "provider_list_failed", "detail": "..." }` | The provider's list-models call (needed to validate `model_id`) failed. |
 | `503` | `{ "error": "hot_write_failed", "detail": "..." }` with header `X-Augchatd-Reason: hot-write-failed` | Hot SQLite write failed (see [contract-storage-hot](../behavior/contracts/storage-hot.md)). |
 
