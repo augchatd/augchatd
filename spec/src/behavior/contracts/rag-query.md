@@ -31,6 +31,7 @@ When a conversation has one or more **active RAG-type connectors** (active state
 2. Builds a query constrained to **that connector's `indexes[]`**.
 3. Authenticates with that connector's `auth` credentials against the connector's `cluster`.
 4. Returns hits to the LLM, tagged with the connector's `descriptive_id` so the LLM (and the streamed indicator) know which knowledge base they came from.
+5. **Emits a `source-document` UI part per hit** into the chat stream, carrying `providerMetadata.augchatd = { source_descriptive_id, index, doc_id, score, snippet }`. The bundled UI renders each as a clickable chip beneath the assistant message — the LLM is therefore not expected to paste inline parenthetical citations (which become redundant noise).
 
 Scope is applied **before** query construction. The LLM cannot express a query that escapes the connector's `indexes[]`; the tool surface only exposes that set. RAG-type connectors **inactive for the current conversation** are not exposed to the LLM at the start of the turn (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)).
 

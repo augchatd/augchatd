@@ -33,8 +33,8 @@ Given a valid JWT, a target `conversation_id`, and an end-user message, augchatd
    - **MCP-type connectors** with that connector's credentials (see [mcp-invocation](mcp-invocation.md))
    - **RAG-type connectors** scoped to that connector's allowed `indexes[]` (see [rag-query](rag-query.md))
 4. Feed tool results back to the LLM.
-5. Loop until the LLM produces a final assistant message.
-6. **Stream** the reply to the browser using the assistant-ui native protocol (Vercel AI SDK data stream).
+5. Loop until the LLM produces a final assistant message OR a per-request **step cap** is hit (currently 100 steps). If the cap is hit before a final message is produced, augchatd emits a visible warning text part into the stream (so the user sees "hit the tool-use depth limit ... data is partial" instead of a silently-truncated conversation).
+6. **Stream** the reply to the browser using the assistant-ui native protocol (Vercel AI SDK data stream). Each assistant message in the stream carries `metadata.augchatd = { model_id, provider }` — the model and provider that produced that turn. The bundled UI renders this as a small per-message chip so a user who switched models mid-conversation can tell which model produced each reply.
 
 Throughout, only the session's provisioned credentials and the **conversation's active scope captured at turn start** are used. Inactive connectors are not exposed to the LLM; toggling a connector mid-turn does **not** abort an in-flight tool call.
 

@@ -51,6 +51,8 @@ That stream carries:
 - assistant message tokens (incrementally)
 - sanitized tool-call indicators (no credentials, no internal URLs)
 - tool result indicators
+- **`source-document` parts** — one per RAG hit, with `providerMetadata.augchatd = {source_descriptive_id, index, doc_id, score, snippet}`. Rendered as clickable chips by the bundled UI (see [contract-rag-query](../behavior/contracts/rag-query.md))
+- **per-message metadata** — each assistant message carries `metadata.augchatd = {model_id, provider}` identifying which model produced it. Rendered as a per-message chip by the bundled UI (see [contract-session-chat](../behavior/contracts/session-chat.md))
 - final completion signal
 
 ## What the browser never sees

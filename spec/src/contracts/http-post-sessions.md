@@ -79,6 +79,7 @@ links:
 | `name` | string | Human-friendly display label shown by the bundled UI. |
 | `type` | enum | `"mcp"` \| `"rag"`. Determines the per-type fields required. |
 | `default_active` | boolean | Initial active state for the connector. Captured into the conversation's saved state at first observation; later changes to `default_active` do **not** retroactively affect conversations that have already snapshotted it (see [adr-0010](../architecture/adrs/0010-unified-connector-model.md#persistence-of-active-state-per-conversation)). |
+| `description` | string (optional) | Free-form hint about what content/data lives behind this connector. RAG: prepended to the retrieve tool description. MCP: prepended to every tool description as a connector-level hint. Helps the LLM pick between connectors and shape queries without blind guessing. |
 
 ### Connector entry — `type: "mcp"`
 
@@ -86,6 +87,7 @@ links:
 | --- | --- | --- |
 | `url` | string | HTTP/SSE endpoint. Stdio MCPs require a bridge (see [adr-0004](../architecture/adrs/0004-http-sse-mcp-only.md)). |
 | `auth` | object | Per-call auth (typically `{ "bearer": "..." }`). |
+| `read_only` | boolean (optional, default `true`) | Safety gate. When `true`, augchatd only exposes tools the MCP server has annotated `readOnlyHint: true` — unannotated tools and tools with `destructiveHint: true` are filtered out. Set to `false` to opt the connector in to writes (explicit integrator decision). |
 
 ### Connector entry — `type: "rag"`
 
@@ -95,6 +97,7 @@ links:
 | `cluster` | string | Backend URL. |
 | `auth` | object | Backend credentials. For OpenSearch the typical shape is `{ "bearer": "..." }` for a managed service or `{ "basic": { "username": "...", "password": "..." } }` for self-hosted clusters; augchatd passes the object through to the OpenSearch client. |
 | `indexes` | string[] | OpenSearch indexes this connector is scoped to. |
+| `language` | string (optional) | Natural-language hint about the corpus, e.g. `"fr"`, `"French"`, `"pt-BR + en"`. Surfaced in the retrieve tool's description so the LLM phrases queries in the right language. BM25 is lexical — a PT query against an FR corpus won't match without this hint. |
 
 ### Validation rules
 
