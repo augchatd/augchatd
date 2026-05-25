@@ -48,15 +48,6 @@ export function createApp(config: BootConfig): Hono {
   if (config.mode === "demo" && config.demo) {
     // Specific routes first so they win over the wildcard below.
     app.post("/demo/sessions", demoSessionsHandler(config.demo, config.demo_ttl_seconds));
-    // Explicit 404 for the removed legacy endpoint — otherwise the
-    // wildcard below would happily serve the wrapper HTML at this
-    // URL, which is confusing for anyone with cached docs / scripts.
-    app.get("/demo/jwt", (c) =>
-      c.json(
-        { error: "removed", hint: "use POST /demo/sessions" },
-        404,
-      ),
-    );
     app.get("/demo", demoPageHandler);
     // Wildcard so the wrapper page also serves /demo/c/<cid> etc. —
     // lets us mirror the iframe's internal route into a real URL path
