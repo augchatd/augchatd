@@ -60,6 +60,12 @@ const DEFAULT_DEMO_TTL_SECONDS = 60;
 
 const PLACEHOLDER_API_KEYS = new Set(["sk-replace-me", "REPLACE_ME"]);
 
+// Identifiers that land in filesystem paths (`user_id`, `tenant_id`). The
+// allowed alphabet mirrors src/storage.ts's `sanitize()` so the validated
+// form is also the on-disk form. Rejecting up front lets us drop the
+// sanitize-collision risk surfaced in the audit.
+const IDENT_RE = /^[a-zA-Z0-9._-]{1,100}$/;
+
 export function loadBootConfig(): BootConfig {
   const mode = readMode();
   return {
@@ -158,6 +164,18 @@ function validateSession(value: unknown): DemoModeConfig {
   const o = value as Record<string, unknown>;
 
   const user_id = reqString(o["user_id"], "user_id");
+  // user_id lands in a filesystem path: data/<tenantId>/<userId>.sqlite (see
+  // contract-storage-hot). Restrict to a safe alphabet up front instead of
+  // letting src/storage.ts sanitize() collapse e.g. "a/b" and "a_b" into one
+  // file. The 100-char cap mirrors the sanitize() truncation. Demo's
+  // tenant_id is hardcoded to "demo", so it does not need the same check
+  // here; the production POST /sessions handler should reuse `IDENT_RE` for
+  // its tenant_id (derived from the mTLS cert).
+  if (!IDENT_RE.test(user_id)) {
+    fail(
+      `"user_id" must match ${IDENT_RE.source} (got ${JSON.stringify(user_id)})`,
+    );
+  }
   const system_prompt = reqString(o["system_prompt"], "system_prompt");
   const model = reqModel(o["model"]);
 
