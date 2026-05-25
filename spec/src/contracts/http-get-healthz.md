@@ -14,7 +14,7 @@ links:
 
 ## Availability
 
-Exposed on the same origin as the JSON API in **both** modes (`demo` and production). No `AUGCHATD_MODE` gating — unlike [`GET /demo/jwt`](http-get-demo-jwt.md), which is demo-only.
+Exposed on the same origin as the JSON API in **both** modes (`demo` and production). No `AUGCHATD_MODE` gating — unlike the `GET /demo/*` and `POST /demo/sessions` surfaces, which are demo-only.
 
 ## Auth
 
@@ -68,4 +68,3 @@ A deploy of augchatd into production with `AUGCHATD_MODE=demo` still set is a re
 ## Related
 
 - Behavior: [demo-mode](../behavior/contracts/demo-mode.md)
-- Companion demo-only endpoint: [http-get-demo-jwt](http-get-demo-jwt.md)

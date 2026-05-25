@@ -25,7 +25,7 @@ links:
 > `(tenant, user)` (see [contract-storage-hot](storage-hot.md)) — toggle
 > changes now survive process restarts as the spec requires.
 >
-> Two intentional deviations remain:
+> Three intentional deviations remain:
 >
 > 1. **`POST /conversations` accepts a client-supplied `conversation_id`**
 >    (idempotent on it). The bundled UI passes the assistant-ui-generated
@@ -34,6 +34,9 @@ links:
 > 2. **Chat-handler also auto-creates** the conversation if a `POST /chat`
 >    arrives for an unknown `conversation_id` (rather than 404). Same
 >    capture-on-first-observation rule, just triggered by the chat lane.
+> 3. **`DELETE /conversations/:cid` is not yet implemented.** The contract
+>    below describes the desired cleanup semantics; until the endpoint
+>    lands, saved active states accumulate for the conversation lifetime.
 
 ## Promise
 
@@ -64,7 +67,7 @@ The end user can only **narrow** the resolved scope by turning connectors off **
 - A `PUT` with an extra field beyond `{ active }`, or a wrong-typed `active`, returns `400`; no state changes.
 - After a forced re-mint (`DELETE /sessions/:id` then `POST /sessions`) the next session re-loads the same `:cid` and serves it with its previously-saved active states.
 - `PUT /conversations/:unknown_cid/...` or `PUT /conversations/:cid/connectors/:unknown_id` returns `404`; no state is changed.
-- `DELETE /conversations/:cid` removes the conversation's saved active states along with the rest of its data.
+- (Planned, see Implementation status above) `DELETE /conversations/:cid` removes the conversation's saved active states along with the rest of its data.
 
 ## Non-promises
 

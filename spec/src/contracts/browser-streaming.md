@@ -14,7 +14,7 @@ links:
 
 ## Auth
 
-JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md) (production) or [`GET /demo/jwt`](http-get-demo-jwt.md) (demo).
+JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md). The parent that supplies the JWT is the `GET /demo/` wrapper in demo (which calls `POST /demo/sessions` server-side) or the integrator's app page in production (which calls [`POST /sessions`](http-post-sessions.md) server-side).
 
 ## Surface (declared minimum)
 
@@ -32,8 +32,15 @@ The browser API supports:
 - list a conversation's connectors with active state — [GET /conversations/:cid/connectors](http-get-conversation-connectors.md)
 - toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
 
-> [!NOTE] Assumption
-> The conversation endpoints' exact paths/verbs are an evidence gap until code lands. `POST /conversations` and `DELETE /conversations/:cid` are referenced as established semantics by `contract-connector-toggle` and `adr-0010` (snapshot site, atomic delete) — so those two are effectively settled. The remaining gaps are the listing/history/messages paths (`GET /conversations`, `GET /conversations/:id`, and whether send-message is `POST /chat` vs `POST /conversations/:id/messages`). The connector endpoints **are** specified — see the two technical-contract files linked above.
+> [!NOTE] Status of the conversation endpoints
+> Settled (code on branch `trace-conversations`):
+> - `POST /conversations` (create)
+> - `POST /chat` (send a message; the streamed reply uses the protocol below)
+> - `GET /conversations/:cid/messages` (full history for replay/hydration)
+>
+> Still gaps (planned, not yet implemented):
+> - `GET /conversations` (list all conversations of the user)
+> - `DELETE /conversations/:cid` (remove a conversation)
 
 ## Streaming protocol
 
