@@ -86,7 +86,7 @@ links:
 | Field | Type | Notes |
 | --- | --- | --- |
 | `url` | string | HTTP/SSE endpoint. Stdio MCPs require a bridge (see [adr-0004](../architecture/adrs/0004-http-sse-mcp-only.md)). |
-| `auth` | object | Per-call auth (typically `{ "bearer": "..." }`). |
+| `auth` | object | Per-call auth. Three accepted shapes that compose freely (later shapes win on header collision): `{ "bearer": "..." }` → `Authorization: Bearer ...`; `{ "basic": { "username": "...", "password": "..." } }` → `Authorization: Basic <base64(user:pass)>`; `{ "headers": { "X-Mcp-Client-Id": "...", ... } }` → arbitrary headers forwarded as-is (for vendor-specific signing schemes, client-id/secret pairs, etc.). |
 | `read_only` | boolean (optional, default `true`) | Safety gate. When `true`, augchatd only exposes tools the MCP server has annotated `readOnlyHint: true` — unannotated tools and tools with `destructiveHint: true` are filtered out. Set to `false` to opt the connector in to writes (explicit integrator decision). |
 
 ### Connector entry — `type: "rag"`

@@ -42,6 +42,20 @@ The browser API supports:
 > - `GET /conversations` (list all conversations of the user)
 > - `DELETE /conversations/:cid` (remove a conversation)
 
+## URL convention (bundled UI)
+
+The bundled UI keeps the active conversation in the URL using the shape `/c/<conversation_id>`. This is a **UI convention layered on top of the existing JSON contracts** — it does not add HTTP surface beyond `POST /conversations` and `GET /conversations/:cid/messages`.
+
+Behavior:
+
+- **Boot with no path** → `POST /conversations` to mint a UUID, then `history.replaceState("/c/<uuid>")`.
+- **Boot with `/c/<cid>`** → `GET /conversations/:cid/messages` to hydrate. On 404 (unknown cid for this session's `(tenant, user)`), mint a fresh conversation and `replaceState` to the new id.
+- **Chat transport overrides `body.id` to the URL cid** — the assistant-ui-internal `threadListItem.id` stays client-local and never goes on the wire.
+
+**Auth boundary is implicit** via the hot-storage partition `data/<tenantId>/<userId>.sqlite`: a cid owned by a different `(tenant, user)` resolves to `conversation_not_found` (404), so no explicit cross-session check is needed in the routing layer.
+
+Inside an iframe (demo wrapper or production integrator), route changes are mirrored to the parent via the `augchatd:route` postMessage (see [browser-postmessage](browser-postmessage.md)) so a hard reload of the parent URL preserves the conversation.
+
 ## Streaming protocol
 
 The streamed reply uses the **assistant-ui native protocol** = **Vercel AI SDK data stream**.

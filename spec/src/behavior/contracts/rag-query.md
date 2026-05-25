@@ -33,6 +33,9 @@ When a conversation has one or more **active RAG-type connectors** (active state
 4. Returns hits to the LLM, tagged with the connector's `descriptive_id` so the LLM (and the streamed indicator) know which knowledge base they came from.
 5. **Emits a `source-document` UI part per hit** into the chat stream, carrying `providerMetadata.augchatd = { source_descriptive_id, index, doc_id, score, snippet }`. The bundled UI renders each as a clickable chip beneath the assistant message — the LLM is therefore not expected to paste inline parenthetical citations (which become redundant noise).
 
+> [!NOTE] Implementation pattern — per-part, not panel
+> An earlier attempt rendered RAG sources via a global `CitationsPanel` driven by a `useThread((t) => collectSources(t.messages))` selector — that selector returned a fresh array each render and tripped React error #185 ("Maximum update depth exceeded"). The shipped pattern emits the chips as ordinary message parts instead: the retrieve tool captures `RagHit[]` into a side-channel map keyed by `toolCallId` (`hitsByToolCall` in `src/rag.ts`); the chat handler's `onStepFinish` drains that map and writes one `source-document` `UIMessagePart` per hit into the stream. Each hit thus rides as a part on the assistant message it came from — the UI just renders parts in order, no thread-wide selectors needed.
+
 Scope is applied **before** query construction. The LLM cannot express a query that escapes the connector's `indexes[]`; the tool surface only exposes that set. RAG-type connectors **inactive for the current conversation** are not exposed to the LLM at the start of the turn (active state is per-conversation; see [contract-connector-toggle](connector-toggle.md)).
 
 ## Observable outcomes
