@@ -58,4 +58,15 @@ if (config.trace_dir) {
 export default {
   port: config.port,
   fetch: app.fetch,
+  // Bun.serve defaults to a 10-second idleTimeout — the connection drops
+  // if the server doesn't write for 10s. Reasoning models (gpt-5-mini,
+  // o1, …) commonly go silent for 12–30s between tool calls while the
+  // model "thinks" without emitting tokens; the SSE response is open but
+  // no bytes flow during the reasoning gap. With the default, Bun closes
+  // the socket mid-stream, the server keeps writing into a dead
+  // connection (trace shows response.finish; the browser sees
+  // ERR_INCOMPLETE_CHUNKED_ENCODING). 255 is Bun's documented max — well
+  // above any normal silent gap, and a 4-minute slow-client window is
+  // acceptable for this workload (chat with tool-use loops).
+  idleTimeout: 255,
 };
