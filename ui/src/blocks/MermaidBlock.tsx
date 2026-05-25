@@ -10,10 +10,17 @@ import { useEffect, useId, useRef, useState } from "react";
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 function loadMermaid() {
   if (!mermaidPromise) {
+    // Read the session theme from the document attribute set by
+    // applyTheme() during the iframe handshake (App.tsx). By the time
+    // any assistant message renders a mermaid block, applyTheme has
+    // already run — augchatd does not switch themes mid-session, so
+    // initializing mermaid once with the live attribute is enough.
+    const isDark =
+      document.documentElement.getAttribute("data-theme") === "dark";
     mermaidPromise = import("mermaid").then((m) => {
       m.default.initialize({
         startOnLoad: false,
-        theme: "dark",
+        theme: isDark ? "dark" : "default",
         securityLevel: "strict",
         fontFamily:
           "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
