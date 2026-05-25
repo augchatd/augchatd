@@ -1,10 +1,14 @@
 ---
 id: adr-0006-vercel-ai-sdk-for-llm
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md@e562b2b
     section: "Status / What augchatd does (minimal browser API)"
+  - source: src/llm.ts@06313ae
+    section: "llmFor — provider selection via @ai-sdk/{openai,anthropic}"
+  - source: src/routes/chat.ts@06313ae
+    section: "streamText + createUIMessageStreamResponse — the chat loop"
 links:
   - relation: supports
     target: contract-session-chat

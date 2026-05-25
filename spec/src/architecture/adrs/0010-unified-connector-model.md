@@ -1,10 +1,16 @@
 ---
 id: adr-0010-unified-connector-model
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md
     section: "README header (connectors paragraph) / What augchatd does"
+  - source: src/connectors.ts@06313ae
+    section: "Discriminated union `Connector = McpConnector | RagConnector`; parseConnectors validation"
+  - source: src/mcp.ts@06313ae
+    section: "MCP dispatch + read_only filter"
+  - source: src/rag.ts@06313ae
+    section: "RAG dispatch (BM25; hybrid kNN pending per rag-query PENDING block)"
 links:
   - relation: supports
     target: req-001-per-user-credentials

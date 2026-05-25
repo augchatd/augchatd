@@ -1,10 +1,16 @@
 ---
 id: adr-0009-react-vite-bundled-ui
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md
     section: "Status (stack listing)"
+  - source: ui/package.json@06313ae
+    section: "react ^18, vite ^5, @assistant-ui/react, tailwindcss ^3"
+  - source: ui/vite.config.ts@06313ae
+    section: "Vite build → ui/dist consumed by src/routes/static-ui.ts"
+  - source: ui/src/App.tsx@06313ae
+    section: "Bundled UI entry point"
 links:
   - relation: supports
     target: req-007-bundled-ui

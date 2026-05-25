@@ -1,10 +1,14 @@
 ---
 id: adr-0001-single-binary-bundled-ui
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md@e562b2b
     section: "README header / What augchatd does (bundled UI) / UI integration"
+  - source: src/routes/static-ui.ts@06313ae
+    section: "mountStaticUi — serves ui/dist on the same origin"
+  - source: src/server.ts@06313ae
+    section: "createApp wires static-ui under non-API paths"
 links:
   - relation: supports
     target: req-007-bundled-ui
