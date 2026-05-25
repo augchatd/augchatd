@@ -301,3 +301,99 @@ function safeJsonParse(s: string): unknown {
     return [];
   }
 }
+
+export interface ConversationListItem {
+  conversation_id: string;
+  title: string | null;
+  message_count: number;
+  model_id_override: string | null;
+  /** ISO timestamp; the max(updated_at) across this cid's messages, or created_at if no messages. */
+  updated_at: string;
+}
+
+/**
+ * Returns all conversations for the session's (tenant, user), most-recent
+ * first. `title` is derived from the first user message's text parts
+ * (truncated to ~60 chars) so the bundled UI sidebar can render a
+ * recognizable label without parsing message history client-side.
+ */
+export function listConversations(session: SessionRecord): ConversationListItem[] {
+  const db = storageFor(session);
+  const rows = db
+    .prepare(
+      `SELECT
+         c.conversation_id,
+         c.created_at,
+         c.model_id_override,
+         (SELECT parts_json FROM message m1
+            WHERE m1.conversation_id = c.conversation_id AND m1.role = 'user'
+            ORDER BY ordinal ASC LIMIT 1) AS first_user_parts,
+         (SELECT COUNT(*) FROM message m2 WHERE m2.conversation_id = c.conversation_id) AS message_count,
+         (SELECT MAX(updated_at) FROM message m3 WHERE m3.conversation_id = c.conversation_id) AS last_updated_at
+       FROM conversation c
+       ORDER BY COALESCE(last_updated_at, c.created_at) DESC`,
+    )
+    .all() as Array<{
+    conversation_id: string;
+    created_at: string;
+    model_id_override: string | null;
+    first_user_parts: string | null;
+    message_count: number;
+    last_updated_at: string | null;
+  }>;
+  return rows.map((r) => ({
+    conversation_id: r.conversation_id,
+    title: r.first_user_parts ? deriveTitle(r.first_user_parts) : null,
+    message_count: r.message_count,
+    model_id_override: r.model_id_override,
+    updated_at: r.last_updated_at ?? r.created_at,
+  }));
+}
+
+/**
+ * Extract a short title from a UIMessage `parts_json`. Looks at the first
+ * `{type: "text"}` entry; trims whitespace; truncates to 60 chars with a
+ * single-character ellipsis. Returns null if no text part found.
+ */
+function deriveTitle(partsJson: string): string | null {
+  const parts = safeJsonParse(partsJson);
+  if (!Array.isArray(parts)) return null;
+  for (const p of parts) {
+    if (
+      typeof p === "object" &&
+      p !== null &&
+      (p as { type?: unknown }).type === "text" &&
+      typeof (p as { text?: unknown }).text === "string"
+    ) {
+      const t = ((p as { text: string }).text ?? "").trim();
+      if (!t) return null;
+      return t.length > 60 ? t.slice(0, 59) + "…" : t;
+    }
+  }
+  return null;
+}
+
+/**
+ * Cascade-deletes a conversation: messages → connector_state → conversation
+ * row, all in one transaction. Returns `{ ok: false }` if no conversation
+ * row was deleted (the cid did not exist for this user); the route handler
+ * maps that to a 404.
+ */
+export function deleteConversation(
+  record: ConversationRecord,
+  session: SessionRecord,
+): { ok: boolean } {
+  const db = storageFor(session);
+  try {
+    const changes = db.transaction(() => {
+      db.prepare("DELETE FROM message WHERE conversation_id = ?").run(record.conversation_id);
+      db.prepare("DELETE FROM connector_state WHERE conversation_id = ?").run(record.conversation_id);
+      return db
+        .prepare("DELETE FROM conversation WHERE conversation_id = ?")
+        .run(record.conversation_id).changes;
+    })();
+    return { ok: changes > 0 };
+  } catch (err) {
+    throw new HotWriteError(err instanceof Error ? err.message : String(err));
+  }
+}

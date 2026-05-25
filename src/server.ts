@@ -5,8 +5,10 @@ import { demoPageHandler } from "./routes/demo-page.ts";
 import { chatHandler } from "./routes/chat.ts";
 import {
   createConversationHandler,
+  deleteConversationHandler,
   listConversationConnectorsHandler,
   listConversationMessagesHandler,
+  listConversationsHandler,
   setConversationConnectorStateHandler,
   setConversationModelHandler,
 } from "./routes/conversations.ts";
@@ -55,6 +57,12 @@ export function createApp(config: BootConfig): Hono {
     app.get("/demo/*", demoPageHandler);
     app.post("/chat", requireSession, chatHandler);
     app.post("/conversations", requireSession, createConversationHandler);
+    app.get("/conversations", requireSession, listConversationsHandler);
+    app.delete(
+      "/conversations/:conversation_id",
+      requireSession,
+      deleteConversationHandler,
+    );
     app.get(
       "/conversations/:conversation_id/connectors",
       requireSession,

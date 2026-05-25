@@ -2,8 +2,10 @@ import type { Context } from "hono";
 import type { SessionRecord } from "../session-registry.ts";
 import {
   createConversation,
+  deleteConversation,
   getConversation,
   listConnectorsForConversation,
+  listConversations,
   listMessages,
   setConnectorActive,
   setConversationModel,
@@ -212,4 +214,40 @@ export async function listConversationMessagesHandler(c: Context): Promise<Respo
 
   const items = listMessages(record, session);
   return c.json({ messages: items });
+}
+
+/**
+ * GET /conversations
+ *
+ * Lists all conversations for the session's `(tenant, user)`, most-recent
+ * first. Read-only — no auto-create here. Title is derived server-side
+ * from the first user message so the bundled UI sidebar does not need to
+ * parse message history.
+ */
+export async function listConversationsHandler(c: Context): Promise<Response> {
+  const session = c.get("session") as SessionRecord;
+  const items = listConversations(session);
+  return c.json({ conversations: items });
+}
+
+/**
+ * DELETE /conversations/:conversation_id
+ *
+ * Cascade-deletes the conversation: messages, per-connector active
+ * state, and the conversation row itself, in one transaction. Returns
+ * 204 on success, 404 if the cid is unknown for this user. Idempotent
+ * second call returns 404 (the row was already gone).
+ */
+export async function deleteConversationHandler(c: Context): Promise<Response> {
+  const session = c.get("session") as SessionRecord;
+  const cid = c.req.param("conversation_id");
+  if (!cid) return c.json({ error: "missing_conversation_id" }, 400);
+
+  const record = getConversation(cid, session);
+  if (!record) return c.json({ error: "conversation_not_found" }, 404);
+
+  const result = tryHotWrite(c, () => deleteConversation(record, session));
+  if (result instanceof Response) return result;
+  if (!result.ok) return c.json({ error: "conversation_not_found" }, 404);
+  return new Response(null, { status: 204 });
 }

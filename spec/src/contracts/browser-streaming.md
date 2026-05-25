@@ -33,14 +33,14 @@ The browser API supports:
 - toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
 
 > [!NOTE] Status of the conversation endpoints
-> Settled (code on branch `trace-conversations`):
-> - `POST /conversations` (create)
-> - `POST /chat` (send a message; the streamed reply uses the protocol below)
-> - `GET /conversations/:cid/messages` (full history for replay/hydration)
+> All settled on branch `trace-conversations`:
+> - `POST /conversations` (create) — [http-post-conversations](http-post-conversations.md)
+> - `GET /conversations` (list user's conversations) — [http-get-conversations](http-get-conversations.md)
+> - `DELETE /conversations/:cid` (cascade-delete a conversation) — [http-delete-conversations-cid](http-delete-conversations-cid.md)
+> - `POST /chat` (send a message; the streamed reply uses the protocol below) — [http-post-chat](http-post-chat.md)
+> - `GET /conversations/:cid/messages` (full history for replay/hydration) — [http-get-conversation-messages](http-get-conversation-messages.md)
 >
-> Still gaps (planned, not yet implemented):
-> - `GET /conversations` (list all conversations of the user)
-> - `DELETE /conversations/:cid` (remove a conversation)
+> The bundled UI does not surface a conversation-sidebar / delete affordance yet; the endpoints exist so integrators can wire their own.
 
 ## URL convention (bundled UI)
 
