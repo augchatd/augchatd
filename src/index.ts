@@ -4,6 +4,7 @@ import { initMcpConnectors } from "./mcp.ts";
 import { initRagConnectors } from "./rag.ts";
 import { initTrace } from "./trace.ts";
 import { initStorageForDemo } from "./storage.ts";
+import { listProviderModels } from "./provider-models.ts";
 
 // Wrap the boot-config load so a BootConfigError prints just `err.message`
 // (no Bun stack) and exits 1 — the missing-file `cp` hint and the
@@ -22,6 +23,21 @@ try {
 initTrace(config.trace_dir);
 
 if (config.mode === "demo" && config.demo) {
+  // Probe the LLM credential up front by calling the provider's list-models
+  // endpoint with the supplied key. A bad key surfaces here as a clean
+  // boot failure ("LLM credential probe failed …") instead of an opaque
+  // 401 on the user's first chat turn. Mirrors the S3 writability check
+  // promised by `contract-session-create` (issue #9 §C7).
+  try {
+    await listProviderModels(config.demo.model.provider, config.demo.model.api_key);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `\nLLM credential probe failed for ${config.demo.model.provider}: ${msg}\n\n` +
+        `Check local/demo_session.json → model.api_key (and model.provider).\n`,
+    );
+    process.exit(1);
+  }
   // Open hot SQLite for the demo (tenant, user) before the first
   // conversation/chat request — avoids first-request latency spike.
   initStorageForDemo(config.demo.user_id);
