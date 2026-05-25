@@ -43,6 +43,7 @@ Throughout, only the session's provisioned credentials and the **conversation's 
 ## Observable outcomes
 
 - A streamed reply reaches the browser with no LLM key, connector credentials, or upstream URLs exposed.
+- A streamed reply survives multi-tens-of-seconds silent gaps between SSE frames — reasoning models routinely produce these between tool-call rounds. See [adr-0011](../../architecture/adrs/0011-tolerate-reasoning-model-stream-gaps.md).
 - Tool-call indicators in the stream are sanitized — they show *what was called* (the connector's `descriptive_id` / display name) but not credentials or internal URLs.
 - A second concurrent session calling the same MCP URL carries **that session's connector credentials**, not the first's.
 - A connector toggled off for conversation `:cid` via `PUT /conversations/:cid/connectors/:descriptive_id { active: false }` is **not present** in the tool list of the next chat turn against that conversation — but it remains exposed for chat turns against other conversations where it is still active.

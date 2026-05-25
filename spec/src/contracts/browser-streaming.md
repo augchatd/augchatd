@@ -69,6 +69,8 @@ That stream carries:
 - **per-message metadata** — each assistant message carries `metadata.augchatd = {model_id, provider}` identifying which model produced it. Rendered as a per-message chip by the bundled UI (see [contract-session-chat](../behavior/contracts/session-chat.md))
 - final completion signal
 
+The transport holds the connection open across multi-tens-of-seconds silent gaps between frames — reasoning models routinely produce these between tool-call rounds. See [adr-0011](../architecture/adrs/0011-tolerate-reasoning-model-stream-gaps.md).
+
 ## What the browser never sees
 
 Per [req-003](../behavior/requirements/req-003-server-side-secrets.md):
