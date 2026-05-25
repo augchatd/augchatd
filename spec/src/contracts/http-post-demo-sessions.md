@@ -24,7 +24,7 @@ None. (Demo mode bypasses mTLS by design.)
 
 `POST /demo/sessions`
 
-No body. The session config is loaded once at boot from the `DEMO_*` environment variables (see [contract-demo-mode](../behavior/contracts/demo-mode.md)).
+No body. The session config is loaded once at boot from a JSON file on disk (`local/demo_session.json` by default; see [contract-demo-mode](../behavior/contracts/demo-mode.md)). The file shape mirrors the production `POST /sessions` body.
 
 ## Response — success
 
@@ -45,7 +45,7 @@ No body. The session config is loaded once at boot from the `DEMO_*` environment
 | `session_id` | string (UUID) | New per call |
 | `jwt` | string | Signed JWT; lifetime = `DEMO_TTL_SECONDS` (default 60s) |
 | `expires_at` | string (ISO 8601) | When the JWT expires |
-| `theme` | `"light"` \| `"dark"` | From `DEMO_THEME` (default `"light"`) |
+| `theme` | `"light"` \| `"dark"` | From the session JSON (default `"light"`) |
 
 Same shape as the [`POST /sessions`](http-post-sessions.md) response, plus the `theme` field so the demo wrapper can forward it through the [postMessage handshake](browser-postmessage.md) to the iframe.
 

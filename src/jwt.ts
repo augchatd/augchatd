@@ -10,8 +10,8 @@ import { sign, verify } from "hono/jwt";
  * For demo mode (this scaffold), the symmetric secret is generated once
  * at process boot. Process restart invalidates every previously-issued
  * JWT — which is fine, because demo state does not survive restart
- * anyway (no cold storage unless DEMO_S3_URI is set, and even then the
- * session itself is process-bound).
+ * anyway: the in-memory session registry is rebuilt empty and JWTs are
+ * process-bound.
  *
  * Production minting (forthcoming with POST /sessions) will use a
  * configurable secret or asymmetric keys; that is not in this commit.

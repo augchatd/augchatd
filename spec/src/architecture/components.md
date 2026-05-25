@@ -29,7 +29,7 @@ augchatd process
 │
 ├── Session registry (in-memory)
 │   └── { session_id → { tenant_id, user_id, system_prompt, model+key,
-│                         s3_uri, connectors[] (resolved scope), theme } }
+│                         storage, connectors[] (resolved scope), theme } }
 │        each connector: { descriptive_id, name, type, default_active,
 │                          description?, type-specific config }
 │        — active flag lives per conversation in hot SQLite, not here

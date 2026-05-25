@@ -33,7 +33,7 @@ If `connectors[]` is present, each entry is parsed by its `type` (`mcp` | `rag`)
 
 The integrator is the sole authority on **which** connectors a session gets (the *resolved scope*); augchatd does not decide policy, it enforces what the payload declared.
 
-> **Demo equivalent.** In demo mode (`AUGCHATD_MODE=demo`), an env-driven analogue `POST /demo/sessions` mints sessions from the boot-time config — same response shape `{ session_id, jwt, expires_at, theme }`, no mTLS, no S3 writability check, no per-call payload. The shape is preserved so the iframe + postMessage handshake exercised in demo is the same flow integrators use in production. See [contract-demo-mode](demo-mode.md).
+> **Demo equivalent.** In demo mode (`AUGCHATD_MODE=demo`), a file-backed analogue `POST /demo/sessions` mints sessions from a JSON config loaded once at boot from `local/demo_session.json` — same response shape `{ session_id, jwt, expires_at, theme }`, no mTLS, no S3 writability check, no per-call payload. The on-disk JSON mirrors this contract's request shape so the iframe + postMessage handshake exercised in demo is the same flow integrators use in production. See [contract-demo-mode](demo-mode.md).
 
 ## Observable outcomes
 

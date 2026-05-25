@@ -139,7 +139,7 @@ export function storageFor(session: SessionRecord): Database {
 }
 
 /** Open the demo (tenant, user) DB at boot so the first write is fast. */
-export function initStorageForDemo(): void {
-  openHotDb("demo", "demo");
+export function initStorageForDemo(user_id: string): void {
+  openHotDb("demo", user_id);
 }
 

@@ -21,12 +21,11 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 
 1. **Skips mTLS** entirely.
 2. **Does not accept `POST /sessions` or `DELETE /sessions/:id`** — both return `404`. The integrator-facing surface is closed in demo mode.
-3. **Loads the demo config once at boot** from environment variables:
-   - `DEMO_MODEL_PROVIDER`, `DEMO_MODEL_ID`, `DEMO_MODEL_API_KEY`, `DEMO_SYSTEM_PROMPT` — required for the model.
-   - `DEMO_CONNECTORS` (JSON string) **or** `DEMO_CONNECTORS_FILE` (filesystem path to a JSON file with the same shape) — optional. Same shape as the production session payload's `connectors[]`. Absent ⇒ no connectors (plain chat). The file variant is recommended whenever the JSON carries credentials. **The file is read exactly once at boot** and held in memory; subsequent file-system changes do not affect the running process.
-   - `DEMO_S3_URI` — optional cold-storage bucket. Absent ⇒ hot-only; history lost on restart.
-   - `DEMO_THEME` — optional, `"light"` (default) or `"dark"`. Production equivalent will be a `theme` field on `POST /sessions`.
-   - `DEMO_TTL_SECONDS` — optional JWT lifetime in seconds (default `60`). Low default so the refresh path stays exercised in dev.
+3. **Loads the demo session config once at boot** from a single JSON file on disk (path `local/demo_session.json` by default; overridable via `DEMO_SESSION_FILE`). The file's shape is the same as the production `POST /sessions` body — so the demo config is a literal preview of what an integrator would send over HTTP. Required top-level fields: `user_id`, `model.{provider,model_id,api_key}`, `system_prompt`. Optional: `storage` (cold-storage credentials — absent ⇒ hot-only, history lost on restart), `connectors[]` (typed MCP / RAG entries, same shape as production), `theme` (`"light"` default or `"dark"`). **The file is read exactly once at boot** and held in memory; subsequent file-system changes do not affect the running process. If the file is missing, augchatd refuses to boot with a copy-paste `cp local/demo_session.json.example …` hint.
+
+   **Deployment-level env vars** (not per-session):
+   - `DEMO_TTL_SECONDS` — JWT lifetime in seconds (default `60`). Low default so the refresh path stays exercised in dev.
+   - `DEMO_SESSION_FILE` — override the session-config path (default `local/demo_session.json`).
 
    **Mode-agnostic operational env vars** (read in both demo and production):
    - `AUGCHATD_PORT` (or `PORT`) — listen port. Default `8080`.
@@ -37,7 +36,7 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 6. Serves a **`GET /demo/`** (and the wildcard `GET /demo/*`) **wrapper page** that exercises the same iframe + postMessage handshake an integrator will use in production (see [contract-ui-handshake](ui-handshake.md)). The wrapper is the "fake integrator": it POSTs `/demo/sessions` for the JWT and then postMessages it to the iframe. The wildcard so `/demo/c/<cid>` resolves to the same wrapper — the iframe's internal route is mirrored to the parent's URL pathname so a hard reload preserves the conversation.
 7. Behaves identically to production mode from the chat path onward — same tool-use loop, same connector dispatch, same storage rules.
 
-> Demo's only difference from production is the source of session config: env vars (consumed by `POST /demo/sessions`) instead of an mTLS-authenticated integrator payload (consumed by `POST /sessions`). Everything from the iframe handshake forward is identical — the same code paths in the same binary.
+> Demo's only difference from production is the source of session config: a JSON file on disk (consumed by `POST /demo/sessions`) instead of an mTLS-authenticated integrator payload (consumed by `POST /sessions`). The two share the same JSON shape; only the transport differs. Everything from the iframe handshake forward is identical — the same code paths in the same binary.
 
 ## Observable outcomes
 
@@ -54,22 +53,21 @@ When `AUGCHATD_MODE=demo` is set at boot, augchatd:
 ## Non-promises
 
 - Demo mode is **single-tenant** (`tenantId = "demo"`, `userId = "demo"`).
-- Demo mode holds credentials in the process environment (no secret manager).
+- Demo mode holds credentials in process memory, loaded once at boot from a JSON file on disk (no secret manager).
 - Demo mode does not negotiate per-end-user provisioning — every `POST /demo/sessions` returns a session bound to the same env-supplied model/connectors/system prompt.
 - Demo mode is for local testing and public demos only — not a production path.
 - Demo sessions accumulate in the in-memory registry over the process lifetime (one per `POST /demo/sessions` call). Eviction is out of scope for demo; in production, the lifecycle contract handles this (see [contract-storage-hot](storage-hot.md)).
 
 ## Tests this contract implies
 
-- Boot with `AUGCHATD_MODE=demo` plus required env vars → wrapper page loads at `/demo/`, handshake completes, chat works.
+- Boot with `AUGCHATD_MODE=demo` and a valid `local/demo_session.json` → wrapper page loads at `/demo/`, handshake completes, chat works.
 - Boot without demo mode → `POST /demo/sessions`, `GET /demo/`, `GET /demo/*` are all absent (404).
 - In demo mode, `POST /sessions` (with or without mTLS) returns 404.
 - In demo mode, `DELETE /sessions/:id` returns 404.
-- `DEMO_CONNECTORS` with a valid JSON `connectors[]` array → those connectors are present at chat time and toggleable per conversation.
-- `DEMO_CONNECTORS_FILE` pointing to a readable JSON file → same as above.
-- Both `DEMO_CONNECTORS` and `DEMO_CONNECTORS_FILE` set → process fails to boot with a clear error.
-- Either variant malformed → process fails to boot with a clear error.
-- `DEMO_S3_URI` absent → boot succeeds; conversation history is hot-only for the lifetime of the process.
+- Session config file missing → process fails to boot with a clear message that includes the `cp local/demo_session.json.example …` hint.
+- Session config file malformed (invalid JSON, missing required fields, bad connector entry) → process fails to boot with a clear error pointing at the offending field.
+- `connectors[]` containing valid MCP / RAG entries → those connectors are present at chat time and toggleable per conversation.
+- `storage` omitted → boot succeeds; conversation history is hot-only for the lifetime of the process.
 - Two sequential `POST /demo/sessions` calls return distinct `session_id`s; both JWTs validate against the in-memory registry; both can chat against the same SQLite hot store.
 - Visiting `/demo/c/<existing-cid>` and then hard-reloading lands the iframe on `/c/<existing-cid>` and hydrates the conversation's messages.
 - Graduation: same binary boots production by setting different env / running mTLS — no separate build.

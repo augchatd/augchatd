@@ -3,8 +3,8 @@
  *
  * Per ADR-0010, the session payload's `connectors[]` is a list of typed
  * providers with common fields plus type-specific config. This file
- * defines the discriminated union and a parser that turns the raw JSON
- * (DEMO_CONNECTORS env or DEMO_CONNECTORS_FILE contents, or the
+ * defines the discriminated union and a parser that turns the array slice
+ * of the session payload (the demo session config on disk, or the
  * production POST /sessions body) into typed records.
  *
  * Validation rules mirror contract-session-create:
@@ -61,21 +61,15 @@ export interface RagConnector extends CommonConnector {
 
 export type Connector = McpConnector | RagConnector;
 
-export function parseConnectors(rawJson: string | undefined): Connector[] {
-  if (!rawJson) return [];
-  let arr: unknown;
-  try {
-    arr = JSON.parse(rawJson);
-  } catch (e) {
-    throw new Error(`connectors[]: not valid JSON (${(e as Error).message})`);
-  }
-  if (!Array.isArray(arr)) {
-    throw new Error("connectors[]: must be a JSON array");
+export function parseConnectors(value: unknown): Connector[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("connectors: must be an array");
   }
 
   const out: Connector[] = [];
   const seen = new Set<string>();
-  for (const [i, entry] of arr.entries()) {
+  for (const [i, entry] of value.entries()) {
     const conn = parseEntry(entry, i);
     if (seen.has(conn.descriptive_id)) {
       throw new Error(
@@ -102,7 +96,7 @@ function parseEntry(entry: unknown, i: number): Connector {
   if (type === "mcp") {
     const url = str(e, "url", i);
     const auth = obj(e, "auth", i);
-    const read_only = e["read_only"] === undefined ? true : boolField(e, "read_only", i);
+    const read_only = e["read_only"] === undefined ? true : bool(e, "read_only", i);
     return { type, descriptive_id, name, default_active, description, url, auth, read_only };
   }
   if (type === "rag") {
@@ -115,15 +109,7 @@ function parseEntry(entry: unknown, i: number): Connector {
     const cluster = str(e, "cluster", i);
     const auth = obj(e, "auth", i);
     const indexes = arrStr(e, "indexes", i);
-    const languageRaw = e["language"];
-    const language =
-      languageRaw === undefined
-        ? undefined
-        : typeof languageRaw === "string" && languageRaw.length > 0
-          ? languageRaw
-          : (() => {
-              throw new Error(`connectors[${i}]: field "language" must be a non-empty string when set`);
-            })();
+    const language = optStr(e, "language", i);
     return {
       type,
       descriptive_id,
@@ -155,8 +141,6 @@ function bool(e: Record<string, unknown>, key: string, i: number): boolean {
   }
   return v;
 }
-
-const boolField = bool;
 
 function optStr(e: Record<string, unknown>, key: string, i: number): string | undefined {
   const v = e[key];

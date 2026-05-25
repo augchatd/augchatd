@@ -20,7 +20,7 @@ Top-level capabilities augchatd offers. Each links to its requirement(s) and beh
 | `cap-storage` | **Conversation storage** | Hot in SQLite, cold in S3, flush + hydrate | [req-004](requirements/req-004-tier-stored-history.md) | [storage-hot](contracts/storage-hot.md), [storage-flush](contracts/storage-flush.md) |
 | `cap-ui` | **Bundled UI** | Serve same-origin chat UI; JWT handshake via postMessage; render assistant-message content (Markdown + extensions, code, diagrams, sources, tools) | [req-007](requirements/req-007-bundled-ui.md) | [ui-handshake](contracts/ui-handshake.md), [ui-rendering](contracts/ui-rendering.md) |
 | `cap-isolation` | **Tenant isolation** | Logical separation by mTLS tenant and session memory | [req-005](requirements/req-005-tenant-isolation.md) | (cross-cutting; see [constraints/tenant-isolation.md](../constraints/tenant-isolation.md)) |
-| `cap-demo` | **Demo mode** | Single-tenant boot from env vars | (no separate requirement; serves intent-success step 4) | [demo-mode](contracts/demo-mode.md) |
+| `cap-demo` | **Demo mode** | Single-tenant boot from a disk-loaded JSON session config | (no separate requirement; serves intent-success step 4) | [demo-mode](contracts/demo-mode.md) |
 | `cap-ops` | **Operational probes** | Expose process mode for deploy-safety gating | (no separate requirement) | [http-get-healthz](../contracts/http-get-healthz.md) |
 
 ## Capabilities augchatd does not offer

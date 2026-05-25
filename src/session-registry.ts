@@ -1,5 +1,5 @@
 import type { DemoModeConfig, UiTheme } from "./env.ts";
-import { parseConnectors, type Connector } from "./connectors.ts";
+import type { Connector } from "./connectors.ts";
 
 /**
  * In-memory session registry. Source of truth for credentials and scope
@@ -22,7 +22,12 @@ export interface SessionRecord {
     model_id: string;
     api_key: string;
   };
-  s3_uri: string | undefined;
+  /**
+   * Cold-storage config from the session payload. Opaque until
+   * contract-storage-flush parses it; today the boot log just notes
+   * whether it was supplied (S3 configured vs hot-only).
+   */
+  storage: Record<string, unknown> | undefined;
   /** Typed connectors[]; empty if the session didn't declare any. */
   connectors: Connector[];
   /** UI color scheme the bundled UI should render with. */
@@ -45,12 +50,15 @@ export function bindDemoSession(
 ): SessionRecord {
   const record: SessionRecord = {
     session_id: sessionId,
+    // Tenant is hardcoded in demo per contract-demo-mode: single-tenant by
+    // design. user_id flows through from the session payload so the hot
+    // SQLite lands at data/demo/<user_id>.sqlite.
     tenant_id: "demo",
-    user_id: "demo",
+    user_id: config.user_id,
     system_prompt: config.system_prompt,
     model: config.model,
-    s3_uri: config.s3_uri,
-    connectors: parseConnectors(config.connectors_raw),
+    storage: config.storage,
+    connectors: config.connectors,
     theme: config.theme,
   };
   registerSession(record);

@@ -16,7 +16,7 @@ build/
 ui/dist/
 *.tsbuildinfo
 
-# Local dev config — has secrets (run-dev-local.sh reads these).
-# Committed counterparts: .env.local.example, local/demo_connectors.json.example
-local/demo_connectors.json
-local/demo_connectors.local.json
+# Local dev config — has secrets (src/env.ts reads it at boot in demo mode).
+# Committed counterpart: local/demo_session.json.example
+local/demo_session.json
+local/demo_session.local.json

@@ -3,7 +3,7 @@ import { mintJwt } from "../jwt.ts";
 import { bindDemoSession } from "../session-registry.ts";
 import type { DemoModeConfig } from "../env.ts";
 
-/** POST /demo/sessions — env-driven analogue of POST /sessions; see contract-demo-mode. */
+/** POST /demo/sessions — file-driven analogue of POST /sessions; see contract-demo-mode. */
 export function demoSessionsHandler(demoConfig: DemoModeConfig) {
   return async (c: Context): Promise<Response> => {
     const sessionId = crypto.randomUUID();

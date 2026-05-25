@@ -2,37 +2,38 @@
 
 ## Local development
 
-augchatd boots in demo mode against a local config you keep on disk. Two files (both gitignored) hold your local state:
+augchatd boots in demo mode against a single config file you keep on disk:
 
-- **`.env.local`** — model provider + key + system prompt + any mode-agnostic ops vars
-- **`local/demo_connectors.json`** — MCP / RAG connector list (with credentials)
+- **`local/demo_session.json`** — model + system prompt + S3 + connectors (gitignored, has secrets)
 
-Both have committed example templates:
-
-- [`.env.local.example`](.env.local.example)
-- [`local/demo_connectors.json.example`](local/demo_connectors.json.example)
-
-Copy each to the gitignored name and fill in your values:
+A committed template is right next to it: [`local/demo_session.json.example`](local/demo_session.json.example). Copy it and fill in your values:
 
 ```bash
-cp .env.local.example .env.local
-cp local/demo_connectors.json.example local/demo_connectors.json
-# edit both
+cp local/demo_session.json.example local/demo_session.json
+# edit local/demo_session.json
 ```
 
-Then boot the daemon:
+The shape of this file is the same JSON shape an integrator will POST to `/sessions` in production — the demo just reads it from disk instead of an HTTPS body. See [`spec/src/behavior/contracts/session-create.md`](spec/src/behavior/contracts/session-create.md) for the production contract.
+
+Then boot:
 
 ```bash
 ./run-dev-local.sh
 ```
 
-This is a thin wrapper that:
+The script just exports `AUGCHATD_MODE=demo` + the default trace dir and runs `bun start`. All config validation lives in `src/env.ts`, so booting with `bun start` directly hits the same checks. If `local/demo_session.json` is missing the server stops at boot with a copy-paste `cp` hint.
 
-1. Sources `.env.local` (exporting every var to the augchatd process).
-2. Sets `DEMO_CONNECTORS_FILE=local/demo_connectors.json` if that file exists.
-3. Runs `bun src/index.ts` (no `--watch` — restart manually after backend changes; UI changes need `bun run build:ui` before they show up).
+### Optional per-machine overrides (`.env.local`)
 
-Open `http://localhost:8080/demo/` in a browser. The wrapper page mints a session via `POST /demo/sessions` and runs the same `postMessage` handshake an integrator would in production (see [contract-ui-handshake](spec/src/behavior/contracts/ui-handshake.md)).
+If you need to change port, JWT TTL, trace directory, or the session-file path, copy [`.env.local.example`](.env.local.example) to `.env.local` and uncomment what you need. The file is gitignored. Everything in it is optional — without it, defaults apply.
+
+### Open the demo
+
+```
+http://localhost:8080/demo/
+```
+
+The wrapper page mints a session via `POST /demo/sessions` and runs the same `postMessage` handshake an integrator would in production (see [contract-ui-handshake](spec/src/behavior/contracts/ui-handshake.md)).
 
 ## Spec workflow
 
