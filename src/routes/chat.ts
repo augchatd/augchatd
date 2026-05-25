@@ -12,6 +12,7 @@ import { toolsForActiveConnectors } from "../mcp.ts";
 import { consumeRagHits, toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
+import { markChatEnd, markChatStart } from "../chat-inflight.ts";
 import {
   createConversation,
   getConversation,
@@ -111,12 +112,19 @@ export async function chatHandler(c: Context): Promise<Response> {
     messages: body.messages,
   });
 
+  // Record the in-flight turn so PUT handlers can audit toggle/model
+  // changes that race with the streaming response (contract-session-chat
+  // §"Toggle audit"). The pair start/end is symmetric — `onFinish` fires
+  // on both the happy and the abort paths.
+  markChatStart(conversationId);
+
   const uiStream = createUIMessageStream<UIMessage>({
     // Passing originalMessages so onFinish.messages returns the FULL
     // updated thread (history + new assistant response), not just the
     // new response — needed for hot-storage persistence below.
     originalMessages: body.messages,
     onFinish: ({ messages }) => {
+      markChatEnd(conversationId);
       // Persist the full updated thread to hot storage (idempotent
       // upsert keyed by message_id). Aborted streams still leave the
       // partial assistant message in `messages` — we store it; replay

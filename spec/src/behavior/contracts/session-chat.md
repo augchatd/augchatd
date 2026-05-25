@@ -38,7 +38,7 @@ Given a valid JWT, a target `conversation_id`, and an end-user message, augchatd
 
 Throughout, only the session's provisioned credentials and the **conversation's active scope captured at turn start** are used. Inactive connectors are not exposed to the LLM; toggling a connector mid-turn does **not** abort an in-flight tool call.
 
-**Toggle audit.** A `PUT /conversations/:cid/connectors/:descriptive_id` that arrives **during** an in-flight `POST /chat` for the same `:cid` is persisted immediately (per [contract-connector-toggle](connector-toggle.md)) but observed only by the **next** turn. Implementations SHOULD log the deferred-toggle event so operators can explain to integrators why an apparent toggle did not take effect on the in-progress turn.
+**Toggle audit.** A `PUT /conversations/:cid/connectors/:descriptive_id` that arrives **during** an in-flight `POST /chat` for the same `:cid` is persisted immediately (per [contract-connector-toggle](connector-toggle.md)) but observed only by the **next** turn. The chat handler tracks in-flight cids (`src/chat-inflight.ts`); the PUT handler, when its write coincides with an in-flight turn, emits a `connector.toggle.deferred` event to the per-conversation JSONL trace (see [constraint-observability](../../constraints/observability.md)). Operators grepping the trace by cid can therefore answer "the toggle didn't seem to take effect" in one shot — the deferred event lands between the active turn's `request` and `response.finish`.
 
 ## Observable outcomes
 

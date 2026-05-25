@@ -9,6 +9,8 @@ import {
   setConversationModel,
 } from "../conversation-registry.ts";
 import { HotWriteError } from "../storage.ts";
+import { isChatInFlight } from "../chat-inflight.ts";
+import { writeTraceEvent } from "../trace.ts";
 import { ensureModelsCached } from "./models.ts";
 
 /**
@@ -122,6 +124,22 @@ export async function setConversationConnectorStateHandler(c: Context): Promise<
   );
   if (setOrRes instanceof Response) return setOrRes;
   if (!setOrRes.ok) return c.json({ error: setOrRes.reason }, 404);
+
+  // contract-session-chat §"Toggle audit": a PUT that races an in-flight
+  // chat turn is persisted now but observed only by the next turn (the
+  // active map was snapshotted at turn start). Operators grepping the
+  // conversation trace can now answer "the toggle didn't seem to work"
+  // in one shot — the deferred event lands between the active turn's
+  // `request` and `response.finish`.
+  if (isChatInFlight(cid)) {
+    writeTraceEvent(cid, {
+      type: "connector.toggle.deferred",
+      conversation_id: cid,
+      session_id: session.session_id,
+      descriptive_id: did,
+      active,
+    });
+  }
 
   return new Response(null, { status: 204 });
 }
