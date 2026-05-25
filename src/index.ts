@@ -5,21 +5,19 @@ import { initRagConnectors } from "./rag.ts";
 import { initTrace } from "./trace.ts";
 import { initStorageForDemo } from "./storage.ts";
 
-function bootOrDie<T>(load: () => T): T {
-  try {
-    return load();
-  } catch (err) {
-    // Print the friendly message verbatim — no stack — so the missing-file
-    // hint and field-validation pointers don't get buried in a Bun trace.
-    if (err instanceof BootConfigError) {
-      console.error(err.message);
-      process.exit(1);
-    }
-    throw err;
+// Wrap the boot-config load so a BootConfigError prints just `err.message`
+// (no Bun stack) and exits 1 — the missing-file `cp` hint and the
+// field-validation pointers were carefully formatted to stand alone.
+let config;
+try {
+  config = loadBootConfig();
+} catch (err) {
+  if (err instanceof BootConfigError) {
+    console.error(err.message);
+    process.exit(1);
   }
+  throw err;
 }
-
-const config = bootOrDie(loadBootConfig);
 
 initTrace(config.trace_dir);
 

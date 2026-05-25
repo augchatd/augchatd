@@ -22,7 +22,7 @@ cp local/demo_session.json.example local/demo_session.json
 
 **Field guide:**
 
-- `user_id` (required, non-empty string) — keeps the hot SQLite at `data/demo/<user_id>.sqlite`.
+- `user_id` (required, non-empty string) — keeps the hot SQLite at `<AUGCHATD_DATA_DIR>/demo/<user_id>.sqlite` (demo's tenantId is hardcoded to `demo`; `AUGCHATD_DATA_DIR` defaults to `./data`).
 - `model.{provider,model_id,api_key}` (all required, non-empty strings) — boot refuses if `api_key` still holds the template placeholder.
 - `system_prompt` (required, non-empty string).
 - `storage` (optional) — your S3-compatible cold-storage credentials. **Omit the whole block for hot-only mode** (history is held in SQLite and lost on restart — fine for local poking, surprising in a public demo).

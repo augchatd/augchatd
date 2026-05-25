@@ -49,7 +49,7 @@ No body. The session config is loaded once at boot from a JSON file on disk (`lo
 
 Same shape as the [`POST /sessions`](http-post-sessions.md) response, plus the `theme` field so the demo wrapper can forward it through the [postMessage handshake](browser-postmessage.md) to the iframe.
 
-Each call creates a **new** `session_id` (UUID) and a **new** `SessionRecord` in the in-memory registry. All such sessions share the single `(tenant="demo", user="demo")` hot SQLite — multiple browser tabs each get their own session and their conversations co-mingle in the same per-user store (mirroring what production does for two concurrent sessions of the same user).
+Each call creates a **new** `session_id` (UUID) and a **new** `SessionRecord` in the in-memory registry. All such sessions share the single `(tenant="demo", user=<user_id from local/demo_session.json>)` hot SQLite — multiple browser tabs each get their own session and their conversations co-mingle in the same per-user store (mirroring what production does for two concurrent sessions of the same user).
 
 ## Failure modes
 

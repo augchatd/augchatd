@@ -167,7 +167,16 @@ function validateSession(value: unknown): DemoModeConfig {
     storage = storageRaw as Record<string, unknown>;
   }
 
-  const connectors = parseConnectors(o["connectors"]);
+  // parseConnectors throws plain Error (it's shared with future POST /sessions
+  // handling, where the route should turn it into a 400). At boot, those
+  // would skip bootOrDie's friendly print — rewrap as BootConfigError so the
+  // user sees a clean exit-1 message instead of a Bun stack.
+  let connectors;
+  try {
+    connectors = parseConnectors(o["connectors"]);
+  } catch (e) {
+    fail((e as Error).message);
+  }
 
   // theme is optional; default light.
   const themeRaw = o["theme"];
