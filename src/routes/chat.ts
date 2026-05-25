@@ -142,6 +142,14 @@ export async function chatHandler(c: Context): Promise<Response> {
         model: llmFor(session, modelId),
         system: session.system_prompt,
         messages,
+        // The SDK types providerOptions as Record<string, JSONObject>; our
+        // values are JSON-compatible but TS can't prove deep equivalence
+        // through nested `unknown`. Cast is local and the helper signature
+        // is restrictive enough to keep this honest.
+        providerOptions: reasoningProviderOptions(
+          session.model.provider,
+          modelId,
+        ) as Parameters<typeof streamText>[0]["providerOptions"],
         tools: Object.keys(tools).length > 0 ? tools : undefined,
         stopWhen: stepCountIs(MAX_STEPS),
         onStepFinish: (step) => {
@@ -254,4 +262,30 @@ export async function chatHandler(c: Context): Promise<Response> {
   });
 
   return createUIMessageStreamResponse({ stream: uiStream });
+}
+
+/**
+ * Reasoning models hide their internal reasoning tokens by default — only
+ * the count comes back in `usage.reasoningTokens`, the actual content is
+ * `null` on OpenAI's side (encrypted), absent on Anthropic's. Asking for a
+ * "summary" turns it into streamable text the bundled UI renders inside a
+ * collapsible "Reasoning" section (see App.tsx's `ReasoningPart`).
+ *
+ * Gated on model id because passing the provider option to a model that
+ * isn't a reasoning model returns 400 from the upstream API. The id regex
+ * matches the catalog filter in provider-models.ts.
+ */
+function reasoningProviderOptions(
+  provider: string,
+  modelId: string,
+): Record<string, Record<string, unknown>> | undefined {
+  if (provider === "openai" && /^(o[1-9]|gpt-5)/.test(modelId)) {
+    return { openai: { reasoningSummary: "auto" } };
+  }
+  if (provider === "anthropic" && /opus|sonnet/.test(modelId)) {
+    return {
+      anthropic: { thinking: { type: "enabled", budgetTokens: 2048 } },
+    };
+  }
+  return undefined;
 }

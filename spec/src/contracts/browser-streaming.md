@@ -63,6 +63,7 @@ The streamed reply uses the **assistant-ui native protocol** = **Vercel AI SDK d
 That stream carries:
 
 - assistant message tokens (incrementally)
+- `reasoning-*` parts carrying the model's reasoning summary, when the active model is a reasoning model (OpenAI `o[1-9]*` / `gpt-5*`; Anthropic `claude` opus / sonnet with thinking). Rendered by the bundled UI as a collapsible "Reasoning" section
 - sanitized tool-call indicators (no credentials, no internal URLs)
 - tool result indicators
 - **`source-document` parts** — one per RAG hit, with `providerMetadata.augchatd = {source_descriptive_id, index, doc_id, score, snippet}`. Rendered as clickable chips by the bundled UI (see [contract-rag-query](../behavior/contracts/rag-query.md))
