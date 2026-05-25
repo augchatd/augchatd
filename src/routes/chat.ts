@@ -8,7 +8,7 @@ import {
   type UIMessage,
 } from "ai";
 import { llmFor } from "../llm.ts";
-import { toolsForActiveConnectors } from "../mcp.ts";
+import { isUpstreamUnauthorizedSentinel, toolsForActiveConnectors } from "../mcp.ts";
 import { consumeRagHits, toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
@@ -194,6 +194,29 @@ export async function chatHandler(c: Context): Promise<Response> {
                 },
               });
               sourceDocsEmitted.push({ sourceId, title: h.title });
+            }
+          }
+          // C1 — surface upstream 401s detected by MCP tool execute. The
+          // sentinel was returned in-band so the LLM sees it too; the
+          // chat handler additionally writes a trace event so operators
+          // can grep for the auth-expiry case independently of the LLM's
+          // surfacing. The bundled UI does not consume this yet; the
+          // future iteration (tracked in contract-jwt-refresh's PENDING
+          // block) would also emit a custom UI data part here and the
+          // iframe would translate it into the existing JWT-refresh
+          // handshake (`augchatd:ready`).
+          for (const tr of step.toolResults ?? []) {
+            const out = (tr as { output?: unknown }).output;
+            const connectorId = isUpstreamUnauthorizedSentinel(out);
+            if (connectorId !== null) {
+              writeTraceEvent(conversationId, {
+                type: "upstream.unauthorized",
+                conversation_id: conversationId,
+                session_id: session.session_id,
+                connector: connectorId,
+                tool_call_id: tr.toolCallId,
+                tool_name: tr.toolName,
+              });
             }
           }
           writeTraceEvent(conversationId, {

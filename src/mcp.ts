@@ -77,12 +77,26 @@ async function connectMcp(c: McpConnector): Promise<ConnectedMcp> {
       description,
       inputSchema: jsonSchema(t.inputSchema as object),
       execute: async (input, { abortSignal }) => {
-        const result = (await client.callTool(
-          { name: t.name, arguments: input as Record<string, unknown> },
-          undefined,
-          { signal: abortSignal },
-        )) as unknown;
-        return flattenResult(result);
+        try {
+          const result = (await client.callTool(
+            { name: t.name, arguments: input as Record<string, unknown> },
+            undefined,
+            { signal: abortSignal },
+          )) as unknown;
+          return flattenResult(result);
+        } catch (err) {
+          // Detect upstream 401 (the connector's auth has expired or was
+          // revoked). Return a sentinel string the chat handler recognizes;
+          // it emits a UI data part + trace event so the bundled UI can
+          // (eventually) trigger refresh-and-retry the same way it does for
+          // augchatd's own JWT 401. See contract-jwt-refresh PENDING block.
+          // The LLM also sees this string in the tool result and tends to
+          // surface the auth issue to the user in its reply.
+          if (isUpstreamUnauthorized(err)) {
+            return upstreamUnauthorizedSentinel(c.descriptive_id, err);
+          }
+          throw err;
+        }
       },
     });
   }
@@ -172,6 +186,41 @@ function buildAuthHeaders(auth: Record<string, unknown>): Record<string, string>
     }
   }
   return out;
+}
+
+/**
+ * Heuristic: did the upstream MCP server return a 401?
+ *
+ * The MCP TypeScript SDK propagates transport-level HTTP errors with the
+ * status code in the thrown error's message (e.g. "HTTP 401" /
+ * "Unauthorized"). We do not have a stable error class to instanceof
+ * against across SDK versions, so message-pattern matching is the
+ * pragmatic check. False positives are tolerable — the chat handler
+ * surfaces the sentinel as a recoverable condition, not a hard failure.
+ */
+function isUpstreamUnauthorized(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /\b401\b|unauthor/i.test(err.message);
+}
+
+/**
+ * Sentinel string returned from the tool's `execute` when an MCP call
+ * 401s. Recognizable by the chat handler's `onStepFinish` for in-stream
+ * surfacing; also readable by the LLM, which tends to translate it into
+ * a user-facing message.
+ */
+const UPSTREAM_UNAUTHORIZED_PREFIX = "[augchatd:upstream_unauthorized:";
+
+export function isUpstreamUnauthorizedSentinel(s: unknown): string | null {
+  if (typeof s !== "string" || !s.startsWith(UPSTREAM_UNAUTHORIZED_PREFIX)) return null;
+  const close = s.indexOf("]");
+  if (close < 0) return null;
+  return s.slice(UPSTREAM_UNAUTHORIZED_PREFIX.length, close);
+}
+
+function upstreamUnauthorizedSentinel(descriptive_id: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return `${UPSTREAM_UNAUTHORIZED_PREFIX}${descriptive_id}] ${msg}`;
 }
 
 function flattenResult(result: unknown): string {
