@@ -318,6 +318,29 @@ function ChatRoom({
 
   const runtime = useChatRuntime({ transport, messages: initialMessages });
 
+  // Refresh the JWT when the chat backend emits a `data-augchatd-error`
+  // (upstream connector 401). The listener inside each assistant
+  // message dispatches the window event; here we run the same
+  // postMessage handshake the transport uses for JWT-401. In demo this
+  // mints a fresh session against the same boot-loaded config (so the
+  // expired connector creds come back the same); in production the
+  // integrator's parent page re-mints with refreshed creds.
+  useEffect(() => {
+    const handler = () => {
+      requestJwtFromParent()
+        .then(({ jwt, theme }) => {
+          jwtRef.current = jwt;
+          applyTheme(theme);
+        })
+        .catch(() => {
+          /* parent did not reply; user will see the inline warning */
+        });
+    };
+    window.addEventListener("augchatd:upstream-unauthorized", handler);
+    return () =>
+      window.removeEventListener("augchatd:upstream-unauthorized", handler);
+  }, []);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
@@ -402,6 +425,7 @@ function AssistantMessage() {
             ToolGroup,
           }}
         />
+        <UpstreamAuthListener />
       </div>
       <div className="mt-1 flex items-center gap-1 text-fg-muted">
         <AssistantActionBar />
@@ -409,6 +433,42 @@ function AssistantMessage() {
       </div>
     </MessagePrimitive.Root>
   );
+}
+
+/**
+ * Per-assistant-message side-channel listener for the
+ * `data-augchatd-error` UI part the chat backend emits on upstream
+ * connector 401. On detection, dispatches a window-level event;
+ * `ChatRoom` listens to it and reruns the JWT handshake (which in
+ * production re-mints with refreshed connector credentials). Renders
+ * nothing — the visible warning to the user is the inline text-delta
+ * the chat backend emits alongside the data part. See
+ * spec/src/behavior/contracts/jwt-refresh.md.
+ */
+function UpstreamAuthListener() {
+  const hasUpstreamAuthError = useMessage((s) => {
+    // assistant-ui normalizes the AI SDK's `data-<name>` parts to
+    // `{type: "data", name: "<name>", data: ...}` in the message
+    // content. We watch for `name === "augchatd-error"` once it appears
+    // anywhere in the message — the chat backend emits exactly one
+    // such part per turn, after the stream settles.
+    const content = (s as { content?: readonly unknown[] }).content;
+    if (!Array.isArray(content)) return false;
+    return content.some(
+      (p) =>
+        typeof p === "object" &&
+        p !== null &&
+        (p as { type?: unknown }).type === "data" &&
+        (p as { name?: unknown }).name === "augchatd-error",
+    );
+  });
+  const triggeredRef = useRef(false);
+  useEffect(() => {
+    if (!hasUpstreamAuthError || triggeredRef.current) return;
+    triggeredRef.current = true;
+    window.dispatchEvent(new CustomEvent("augchatd:upstream-unauthorized"));
+  }, [hasUpstreamAuthError]);
+  return null;
 }
 
 /**

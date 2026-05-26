@@ -146,6 +146,13 @@ export async function chatHandler(c: Context): Promise<Response> {
       }
     },
     execute: async ({ writer }) => {
+      // Set of connector descriptive_ids that returned an upstream 401
+      // during this turn (drained from the in-band MCP sentinel inside
+      // onStepFinish). Used after the stream settles to emit a visible
+      // warning + a custom UI data part for the bundled UI to trigger
+      // the re-mint handshake.
+      const upstreamUnauthorizedConnectors = new Set<string>();
+
       const result = streamText({
         model: llmFor(session, modelId),
         system: session.system_prompt,
@@ -196,19 +203,18 @@ export async function chatHandler(c: Context): Promise<Response> {
               sourceDocsEmitted.push({ sourceId, title: h.title });
             }
           }
-          // C1 — surface upstream 401s detected by MCP tool execute. The
-          // sentinel was returned in-band so the LLM sees it too; the
-          // chat handler additionally writes a trace event so operators
-          // can grep for the auth-expiry case independently of the LLM's
-          // surfacing. The bundled UI does not consume this yet; the
-          // future iteration (tracked in contract-jwt-refresh's PENDING
-          // block) would also emit a custom UI data part here and the
-          // iframe would translate it into the existing JWT-refresh
-          // handshake (`augchatd:ready`).
+          // C1 — surface upstream 401s detected by MCP tool execute.
+          // The sentinel was returned in-band so the LLM sees it; we
+          // also (a) write a trace event for operators and (b) collect
+          // the offending connectors so we can emit a visible warning
+          // + a custom UI data part once the turn settles. The data
+          // part is the signal the bundled UI uses to trigger the
+          // augchatd:ready handshake (re-mint with fresh creds).
           for (const tr of step.toolResults ?? []) {
             const out = (tr as { output?: unknown }).output;
             const connectorId = isUpstreamUnauthorizedSentinel(out);
             if (connectorId !== null) {
+              upstreamUnauthorizedConnectors.add(connectorId);
               writeTraceEvent(conversationId, {
                 type: "upstream.unauthorized",
                 conversation_id: conversationId,
@@ -306,6 +312,38 @@ export async function chatHandler(c: Context): Promise<Response> {
             `to summarize what it has so far.`,
         });
         writer.write({ type: "text-end", id });
+      }
+
+      // C1 — emit a visible warning + a structured signal when any MCP
+      // tool returned an upstream 401. The text-delta is what the user
+      // SEES; the `data-augchatd-error` part is what the bundled UI
+      // listens for to trigger the same `augchatd:ready` handshake the
+      // JWT-expiry path uses (the iframe asks its parent for a fresh
+      // session, which in production re-mints with refreshed creds).
+      if (upstreamUnauthorizedConnectors.size > 0) {
+        const ids = [...upstreamUnauthorizedConnectors];
+        const id = `augchatd-upstream-401-${Date.now()}`;
+        writer.write({ type: "text-start", id });
+        writer.write({
+          type: "text-delta",
+          id,
+          delta:
+            `\n\n⚠ **Connector authentication expired** — ${ids
+              .map((d) => `\`${d}\``)
+              .join(", ")}. ` +
+            `Refreshing your session… (your integrator may need to provide updated credentials).`,
+        });
+        writer.write({ type: "text-end", id });
+        // Custom UI data part. The SDK types restrict writer.write to
+        // built-in part types; data-<name> parts are valid at runtime
+        // but escape the static type. The cast is local; the value is
+        // a plain JSON object that the bundled UI consumes via a
+        // useMessagePartData listener (see ui/src/App.tsx).
+        writer.write({
+          type: "data-augchatd-error",
+          id,
+          data: { code: "upstream_unauthorized", connectors: ids },
+        } as unknown as Parameters<typeof writer.write>[0]);
       }
     },
   });
