@@ -13,6 +13,7 @@ import { consumeRagHits, toolsForActiveRagConnectors } from "../rag.ts";
 import type { SessionRecord } from "../session-registry.ts";
 import { writeTraceEvent } from "../trace.ts";
 import { markChatEnd, markChatStart } from "../chat-inflight.ts";
+import { noteConversationActivity } from "../flush-scheduler.ts";
 import {
   createConversation,
   getConversation,
@@ -53,6 +54,22 @@ const MAX_STEPS = 100;
  */
 export async function chatHandler(c: Context): Promise<Response> {
   const session = c.get("session") as SessionRecord;
+
+  // Read-only mode: cold flush has been stalled past threshold (see
+  // contract-storage-durability + the flush scheduler). Refuse new
+  // chat turns; GET routes continue to serve. The bundled UI shows
+  // a "Service temporarily read-only" banner on this header.
+  if (session.readonly_flush_stalled) {
+    c.header("X-Augchatd-Reason", "flush-stalled");
+    return c.json(
+      {
+        error: "flush_stalled",
+        detail:
+          "Cold-storage flush has stalled past the durability threshold; chat is temporarily read-only. The session auto-recovers on the next successful flush.",
+      },
+      503,
+    );
+  }
 
   let body: ChatRequestBody;
   try {
@@ -140,6 +157,11 @@ export async function chatHandler(c: Context): Promise<Response> {
             metadata: m.metadata,
           })),
         );
+        // Reset the idle timer for this conversation. After
+        // AUGCHATD_FLUSH_IDLE_MS of quiet (default 5 min) the flush
+        // scheduler serializes the conversation and uploads it to the
+        // session's S3 bucket — see contract-storage-flush.
+        noteConversationActivity(conversationId, session);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`chat: upsertMessages failed for ${conversationId}: ${msg}`);

@@ -261,6 +261,7 @@ function ChatRoom({
   initialMessages: UIMessage[];
 }) {
   const jwtRef = useRef(initialJwt);
+  const [flushStalled, setFlushStalled] = useState(false);
 
   // Shared "authed fetch" for admin endpoints (model picker, connector toggle).
   // Mirrors the JWT refresh logic in the chat transport below.
@@ -292,7 +293,22 @@ function ChatRoom({
         headers: () => ({ Authorization: `Bearer ${jwtRef.current}` }),
         fetch: async (input, init) => {
           const r = await fetch(input, init);
-          if (r.status !== 401) return r;
+          // 503 + X-Augchatd-Reason: flush-stalled — the session has
+          // gone read-only because cold-storage flush stalled past
+          // threshold. Surface a banner; the flag clears when a flush
+          // eventually succeeds (next successful chat is preceded by a
+          // 200 here, which the success-path clears).
+          if (
+            r.status === 503 &&
+            r.headers.get("X-Augchatd-Reason") === "flush-stalled"
+          ) {
+            setFlushStalled(true);
+            return r;
+          }
+          if (r.status !== 401) {
+            if (flushStalled && r.ok) setFlushStalled(false);
+            return r;
+          }
           try {
             const { jwt, theme } = await requestJwtFromParent();
             jwtRef.current = jwt;
@@ -302,7 +318,9 @@ function ChatRoom({
           }
           const retriedHeaders = new Headers(init?.headers);
           retriedHeaders.set("Authorization", `Bearer ${jwtRef.current}`);
-          return fetch(input, { ...init, headers: retriedHeaders });
+          const retry = await fetch(input, { ...init, headers: retriedHeaders });
+          if (flushStalled && retry.ok) setFlushStalled(false);
+          return retry;
         },
         // Override `body.id` to use OUR conversation_id (the one in
         // the URL / hydrated from POST /conversations) instead of the
@@ -354,9 +372,41 @@ function ChatRoom({
             />
           </div>
         </ThreadPrimitive.Viewport>
-        <Composer conversationId={conversationId} authedFetch={authedFetch} />
+        {flushStalled ? (
+          <FlushStalledBanner />
+        ) : (
+          <Composer conversationId={conversationId} authedFetch={authedFetch} />
+        )}
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
+  );
+}
+
+/**
+ * Banner shown when the chat transport observes a 503 + `X-Augchatd-Reason:
+ * flush-stalled` — see contract-storage-durability and contract-session-chat
+ * §Observable outcomes. Replaces the composer entirely so the user cannot
+ * try to send while the session is read-only; the flag clears
+ * automatically when the next chat call returns 200 (which means the
+ * background retry chain landed a successful flush).
+ */
+function FlushStalledBanner() {
+  return (
+    <div className="border-t border-warn-border bg-warn-bg">
+      <div className="mx-auto flex w-full max-w-thread items-start gap-3 px-4 py-3 text-warn-fg">
+        <span aria-hidden className="text-lg leading-none">⚠</span>
+        <div className="flex-1 text-sm">
+          <div className="font-semibold">
+            Service temporarily read-only — your messages are preserved.
+          </div>
+          <div className="mt-1 text-xs opacity-90">
+            Cold-storage flush is failing; new turns are paused until durability
+            is restored. The chat resumes automatically on the next successful
+            flush.
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
