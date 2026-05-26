@@ -17,6 +17,7 @@ import { noteConversationActivity } from "../flush-scheduler.ts";
 import {
   createConversation,
   getConversation,
+  hydrateFromColdIfMissing,
   resolveModelId,
   snapshotActiveMap,
   upsertMessages,
@@ -86,6 +87,11 @@ export async function chatHandler(c: Context): Promise<Response> {
   }
 
   const conversationId = body.id;
+  // Try to pull the conversation up from cold storage if hot does not
+  // have it (e.g. after an eviction or a fresh process). No-op when
+  // hot already has the row or the session has no cold configured.
+  // Per contract-storage-flush §"On resume, augchatd hydrates from S3".
+  await hydrateFromColdIfMissing(conversationId, session);
   // Auto-create on first observation. The capture-on-first-observation
   // rule from contract-connector-toggle is preserved by createConversation
   // (it snapshots default_active for each in-scope connector).
