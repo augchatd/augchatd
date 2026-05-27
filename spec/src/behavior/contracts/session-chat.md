@@ -33,20 +33,23 @@ Given a valid JWT, a target `conversation_id`, and an end-user message, augchatd
    - **MCP-type connectors** with that connector's credentials (see [mcp-invocation](mcp-invocation.md))
    - **RAG-type connectors** scoped to that connector's allowed `indexes[]` (see [rag-query](rag-query.md))
 4. Feed tool results back to the LLM.
-5. Loop until the LLM produces a final assistant message.
-6. **Stream** the reply to the browser using the assistant-ui native protocol (Vercel AI SDK data stream).
+5. Loop until the LLM produces a final assistant message OR a per-request **step cap** is hit (currently 100 steps). If the cap is hit before a final message is produced, augchatd emits a visible warning text part into the stream (so the user sees "hit the tool-use depth limit ... data is partial" instead of a silently-truncated conversation).
+6. **Stream** the reply to the browser using the assistant-ui native protocol (Vercel AI SDK data stream). Each assistant message in the stream carries `metadata.augchatd = { model_id, provider }` — the model and provider that produced that turn. The bundled UI renders this as a small per-message chip so a user who switched models mid-conversation can tell which model produced each reply.
 
 Throughout, only the session's provisioned credentials and the **conversation's active scope captured at turn start** are used. Inactive connectors are not exposed to the LLM; toggling a connector mid-turn does **not** abort an in-flight tool call.
 
-**Toggle audit.** A `PUT /conversations/:cid/connectors/:descriptive_id` that arrives **during** an in-flight `POST /chat` for the same `:cid` is persisted immediately (per [contract-connector-toggle](connector-toggle.md)) but observed only by the **next** turn. Implementations SHOULD log the deferred-toggle event so operators can explain to integrators why an apparent toggle did not take effect on the in-progress turn.
+**Toggle audit.** A `PUT /conversations/:cid/connectors/:descriptive_id` that arrives **during** an in-flight `POST /chat` for the same `:cid` is persisted immediately (per [contract-connector-toggle](connector-toggle.md)) but observed only by the **next** turn. The chat handler tracks in-flight cids (`src/chat-inflight.ts`); the PUT handler, when its write coincides with an in-flight turn, emits a `connector.toggle.deferred` event to the per-conversation JSONL trace (see [constraint-observability](../../constraints/observability.md)). Operators grepping the trace by cid can therefore answer "the toggle didn't seem to take effect" in one shot — the deferred event lands between the active turn's `request` and `response.finish`.
 
 ## Observable outcomes
 
 - A streamed reply reaches the browser with no LLM key, connector credentials, or upstream URLs exposed.
+- A streamed reply survives multi-tens-of-seconds silent gaps between SSE frames — reasoning models routinely produce these between tool-call rounds. See [adr-0011](../../architecture/adrs/0011-tolerate-reasoning-model-stream-gaps.md).
+- When the active model is a reasoning model (OpenAI `o[1-9]*` / `gpt-5*`; Anthropic `claude *opus* | *sonnet*`), the stream includes `reasoning-*` UI parts carrying the provider's reasoning summary. The bundled UI renders them as a collapsible "Reasoning" section beneath the assistant message. Non-reasoning models do not emit these parts.
 - Tool-call indicators in the stream are sanitized — they show *what was called* (the connector's `descriptive_id` / display name) but not credentials or internal URLs.
 - A second concurrent session calling the same MCP URL carries **that session's connector credentials**, not the first's.
 - A connector toggled off for conversation `:cid` via `PUT /conversations/:cid/connectors/:descriptive_id { active: false }` is **not present** in the tool list of the next chat turn against that conversation — but it remains exposed for chat turns against other conversations where it is still active.
 - When the session is in **read-only mode** because its cold-storage flush has stalled past threshold (see [storage-flush](storage-flush.md) / [storage-durability](../../constraints/storage-durability.md)), `POST /chat` returns `503 Service Unavailable` with `X-Augchatd-Reason: flush-stalled` — `GET /conversations*` continues to serve reads. **The bundled UI surfaces this state with a visible "Service temporarily read-only — your messages are preserved" banner and disables the chat input** until recovery. The session auto-recovers on the next successful flush; the banner disappears automatically.
+- **Client-side abort.** When the browser closes the connection mid-turn (tab close, navigation, explicit "stop" button), augchatd propagates the disconnect's `AbortSignal` to the upstream provider call and to every in-flight MCP / RAG tool call — the LLM stops generating, the connector requests stop in flight, no further tokens are billed. The partial assistant message assembled up to that point IS persisted to hot storage (the trace logs an `aborted` event instead of `response.finish`); replay of the conversation in a later session sees the partial as the assistant's response so the next turn's context reflects what the user actually saw.
 
 ## Non-promises
 

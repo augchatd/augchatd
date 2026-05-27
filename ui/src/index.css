@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Default = LIGHT theme. Opt-in to dark by setting
+     `data-theme="dark"` on the document root (App.tsx does this when
+     the session config says `theme: "dark"`). Tailwind theme tokens
+     reference `rgb(var(--…) / <alpha>)` so swapping these vars
+     re-skins everything that uses bg-/fg-/border-/accent-/warn-
+     utilities. */
+  :root {
+    color-scheme: light;
+    --bg-base: 252 252 253;
+    --bg-soft: 244 244 246;
+    --bg-mid: 230 230 234;
+    --fg-base: 17 17 22;
+    --fg-muted: 102 102 110;
+    --accent: 46 96 220;
+    --warn-bg: 255 240 240;
+    --warn-fg: 153 56 56;
+    --warn-border: 230 180 180;
+    --border: 215 215 220;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-base: 11 11 13;
+    --bg-soft: 19 19 24;
+    --bg-mid: 28 28 36;
+    --fg-base: 233 233 239;
+    --fg-muted: 152 152 159;
+    --accent: 124 156 255;
+    --warn-bg: 42 30 30;
+    --warn-fg: 255 180 180;
+    --warn-border: 91 46 46;
+    --border: 42 42 53;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full bg-bg-base text-fg-base font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+@layer components {
+  /* highlight.js dark theme (github-dark-dimmed-ish) — scoped to code blocks */
+  .hljs {
+    @apply text-fg-base;
+  }
+  .hljs-comment,
+  .hljs-quote {
+    @apply text-fg-muted italic;
+  }
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-literal,
+  .hljs-section,
+  .hljs-link {
+    color: #ff7b72;
+  }
+  .hljs-string,
+  .hljs-attr,
+  .hljs-template-variable,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-built_in {
+    color: #a5d6ff;
+  }
+  .hljs-title,
+  .hljs-name,
+  .hljs-meta {
+    color: #d2a8ff;
+  }
+  .hljs-number,
+  .hljs-class,
+  .hljs-attribute,
+  .hljs-variable,
+  .hljs-tag,
+  .hljs-regexp {
+    color: #ffa657;
+  }
+  .hljs-deletion {
+    color: #ffa198;
+    background: #67060c;
+  }
+  .hljs-addition {
+    color: #aff5b4;
+    background: #033a16;
+  }
+  .hljs-emphasis {
+    @apply italic;
+  }
+  .hljs-strong {
+    @apply font-bold;
+  }
+}

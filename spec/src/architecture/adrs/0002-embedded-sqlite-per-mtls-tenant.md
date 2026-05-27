@@ -18,6 +18,23 @@ links:
 
 # ADR 0002 — Hot storage is Bun's embedded SQLite, partitioned per (mTLS tenant, user)
 
+> [!NOTE] Implementation status (mostly shipped)
+> Layout, WAL, single-writer-per-user lock: shipped (`src/storage.ts`).
+>
+> Lifecycle rule: implemented in code via `closeAndRemoveHotDb`
+> (`src/storage.ts`) gated on the flush-scheduler's per-(tenant, user)
+> session refcount + cleanly-flushed conversations
+> (`src/flush-scheduler.ts`). Eviction fires when the refcount drops
+> to zero AND every conversation for the user is flushed.
+>
+> **Caveat:** `noteSessionEnd` has no caller in demo (sessions live for
+> the process lifetime — demo never decrements the refcount, so demo
+> never evicts; that matches contract-demo-mode §Non-promises).
+> Production `POST /sessions` / `DELETE /sessions/:id` minting will
+> call it. Tenant-folder GC (the empty-directory cleanup) is best-effort
+> and not yet wired — file removal works but the parent directory may
+> remain.
+
 ## Context
 
 augchatd needs hot conversation storage that:

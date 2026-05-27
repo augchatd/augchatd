@@ -17,6 +17,15 @@ links:
 
 # Contract — JWT and credential refresh (single path)
 
+> [!WARNING] PENDING RECONCILIATION (partial — backend half shipped)
+> - **Detected**: 2026-05-25 by /code-changed (audit consolidation, augchatd/augchatd#9)
+> - **Sources in conflict**: this contract's "MCP-401 → browser-401" path vs `src/mcp.ts` + `src/routes/chat.ts` (MCP errors land in tool execute; the SSE response stays 200 because the headers were already flushed before the tool call). Also: `src/auth.ts:24-38` exposes a third 401 sub-code `session_gone` (signature-valid JWT for a record the in-memory registry no longer has — happens on process restart since the HMAC secret in `src/jwt.ts:23-27` is regenerated per boot) that this contract does not name.
+> - **Nature**: MCP-401 → top-level 401 is structurally impossible under streaming-200 — the response is already committed when the tool call runs.
+> - **Backend half shipped:** `src/mcp.ts` detects upstream 401 inside the tool's `execute`, returns an `[augchatd:upstream_unauthorized:<descriptive_id>]` sentinel string in-band. `src/routes/chat.ts` `onStepFinish` recognizes the sentinel and emits a per-conversation trace event `type: "upstream.unauthorized"` for operability. The LLM also reads the sentinel string in the tool result and tends to translate it into a user-facing apology + suggestion-to-refresh.
+> - **Still pending (UI half):** the bundled UI does not yet auto-recover. Future work emits a custom UI data part alongside the trace event so the iframe can trigger the same `augchatd:ready` postMessage that the JWT-expiry path uses, and then re-submit the chat turn — effectively translating the in-band sentinel into the same out-of-band refresh handshake.
+> - **Still pending (session_gone):** document `session_gone` as a third 401 sub-code recovered via the same handshake, and note in [adr-0005-jwt-signature-only](../../architecture/adrs/0005-jwt-signature-only.md) that process restart invalidates every previously-issued JWT.
+> - **Decision owner**: project owner.
+
 ## Promise
 
 When a chat request reaches augchatd with an expired JWT, or when an upstream MCP call returns 401 during a chat turn, augchatd responds to the browser with **HTTP 401**.

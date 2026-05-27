@@ -1,0 +1,47 @@
+{
+  "user_id": "demo",
+  "model": {
+    "provider": "openai",
+    "model_id": "gpt-4o-mini",
+    "api_key": "sk-replace-me"
+  },
+  "system_prompt": "You are a helpful assistant. Tweak this per your corpus — the version used in our own dev environment is a strict tool-use prompt that forbids prior-knowledge answers; see spec/src/behavior/contracts/demo-mode.md for the full rationale.",
+  "storage": {
+    "s3": {
+      "endpoint": "https://your-space.fra1.digitaloceanspaces.com",
+      "region": "fra1",
+      "bucket": "your-bucket",
+      "prefix": "ai-chat-storage/",
+      "access_key_id": "REPLACE_ME",
+      "secret_access_key": "REPLACE_ME"
+    }
+  },
+  "connectors": [
+    {
+      "descriptive_id": "mcp_real_example",
+      "name": "Real MCP via custom headers",
+      "type": "mcp",
+      "default_active": false,
+      "read_only": true,
+      "url": "https://your-mcp.example.com/mcp",
+      "auth": {
+        "headers": {
+          "X-MCP-Client-ID": "your-client-id",
+          "X-MCP-Client-Secret": "your-client-secret"
+        }
+      }
+    },
+    {
+      "descriptive_id": "rag_example",
+      "name": "Example OpenSearch KB",
+      "type": "rag",
+      "default_active": false,
+      "backend": "opensearch",
+      "cluster": "https://your-opensearch.example.com:25060",
+      "auth": { "basic": { "username": "doadmin", "password": "your-password" } },
+      "indexes": ["your-index-uuid"],
+      "language": "en"
+    }
+  ],
+  "theme": "light"
+}

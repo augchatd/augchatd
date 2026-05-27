@@ -17,6 +17,26 @@ links:
 
 # Contract — Flush to cold storage
 
+> [!NOTE] Implementation status (mostly shipped)
+> Implemented on branch `trace-conversations` via `src/cold-storage.ts`
+> (S3 client + `probeWritability` / `uploadFlush` / `downloadFlush`),
+> `src/flush-scheduler.ts` (per-conversation idle timer with capped
+> exponential backoff and the stalled-flush threshold), and the
+> hydration helper `hydrateFromColdIfMissing` in `conversation-registry.ts`.
+> Boot probe (`probeWritability`) refuses the demo boot on bad creds —
+> production `POST /sessions` runs the same probe per request.
+>
+> The trigger model below is **idle-only** today — 5 minutes (overridable
+> via `AUGCHATD_FLUSH_IDLE_MS`) of quiet since the last `upsertMessages`
+> for a conversation. The "session disconnect" trigger requires the
+> production session lifecycle (which is not wired); demo sessions live
+> for the process lifetime, so idle is the only path that fires.
+>
+> **Still pending:** `noteSessionEnd` — the flush-scheduler call that
+> drives the refcount-driven hot eviction (see contract-storage-hot
+> §"Lifecycle") — has no caller in demo. The function exists; production
+> `POST /sessions` + `DELETE /sessions/:id` minting will wire it.
+
 ## Promise
 
 A conversation is flushed from hot SQLite to the integrator's S3-compatible bucket on either trigger:

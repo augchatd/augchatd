@@ -15,7 +15,13 @@ augchatd is a **single binary** that contains everything below.
 augchatd process
 ├── HTTP API layer (Hono)
 │   ├── mTLS endpoints: POST /sessions, DELETE /sessions/:id
-│   ├── demo endpoint (mode=demo only): GET /demo/jwt
+│   ├── demo endpoints (mode=demo only):
+│   │     GET  /demo, /demo/*   ← wrapper page (iframes the UI, runs the
+│   │                              postMessage handshake; wildcard so
+│   │                              /demo/c/<cid> resolves there too)
+│   │     POST /demo/sessions   ← mint a fresh session from the
+│   │                              boot-loaded local/demo_session.json
+│   │                              (same shape as POST /sessions response)
 │   ├── ops endpoint (both modes): GET /healthz   ← exposes "mode": "demo" | "prod"
 │   ├── JWT endpoints: chat, conversation CRUD,
 │   │                   GET /conversations/:cid/connectors (active per conversation),
@@ -23,9 +29,12 @@ augchatd process
 │   └── static UI serving (same origin, /)
 │
 ├── Session registry (in-memory)
-│   └── { session_id → { user_id, model+key, connectors[] (resolved scope), storage, ttl } }
-│        each connector: { descriptive_id, name, type, default_active, type-specific config }
+│   └── { session_id → { tenant_id, user_id, system_prompt, model+key,
+│                         storage, connectors[] (resolved scope), theme } }
+│        each connector: { descriptive_id, name, type, default_active,
+│                          description?, type-specific config }
 │        — active flag lives per conversation in hot SQLite, not here
+│        — JWT TTL is encoded in the JWT itself (exp), not stored here
 │
 ├── Tool-use loop
 │   ├── LLM driver (Vercel AI SDK; Anthropic, OpenAI, …)

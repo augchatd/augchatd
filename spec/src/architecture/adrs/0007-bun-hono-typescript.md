@@ -1,10 +1,16 @@
 ---
 id: adr-0007-bun-hono-typescript
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md@e562b2b
     section: "Status"
+  - source: package.json@06313ae
+    section: "dependencies — bun, hono, typescript devDep; engines.bun >= 1.1"
+  - source: src/index.ts@06313ae
+    section: "Bun.serve default export"
+  - source: src/storage.ts@06313ae
+    section: "bun:sqlite — embedded SQLite path"
 ---
 
 # ADR 0007 — Stack: Bun + Hono + TypeScript

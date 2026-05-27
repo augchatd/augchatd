@@ -1,10 +1,16 @@
 ---
 id: adr-0010-unified-connector-model
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md
     section: "README header (connectors paragraph) / What augchatd does"
+  - source: src/connectors.ts@06313ae
+    section: "Discriminated union `Connector = McpConnector | RagConnector`; parseConnectors validation"
+  - source: src/mcp.ts@06313ae
+    section: "MCP dispatch + read_only filter"
+  - source: src/rag.ts@06313ae
+    section: "RAG dispatch (BM25; hybrid kNN pending per rag-query PENDING block)"
 links:
   - relation: supports
     target: req-001-per-user-credentials
@@ -38,10 +44,11 @@ Replace `mcp_servers[]` + `tools.rag` with a single **`connectors[]`** array on 
 
 Each connector entry has these common fields:
 
-- **`descriptive_id`** (string, unique within session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_schooldrive_user_session"`.
+- **`descriptive_id`** (string, unique within session) — addresses the connector for toggling and logging. Examples: `"rag_public"`, `"rag_internal"`, `"mcp_acme_user_session"`.
 - **`name`** (string) — human-friendly display label shown by the bundled UI. Example: `"Base de conhecimentos pública"`.
 - **`type`** (enum) — `"mcp"` | `"rag"` (extensible).
 - **`default_active`** (boolean) — initial active state at session start. Some connectors may be provisioned but default off (e.g. a powerful tool that the user opts in to per turn).
+- **`description`** (string, optional) — free-form hint about what content/data lives behind this connector. RAG: prepended to the retrieve tool description. MCP: prepended to every tool description as a connector-level hint. Helps the LLM disambiguate between connectors when their per-tool descriptions overlap and shape queries without blind guessing.
 - Type-specific fields (flat, alongside the common fields — matching the previous flat shape of `mcp_servers[]` and `tools.rag`).
 
 ### Type-specific shapes
@@ -50,6 +57,7 @@ Each connector entry has these common fields:
 
 - `url` (string) — HTTP/SSE endpoint.
 - `auth` (object) — same shape as before (typically `{ bearer: "..." }`).
+- `read_only` (boolean, optional, default `true`) — safety gate. When `true`, augchatd only exposes tools the MCP server has explicitly annotated `readOnlyHint: true` (per the MCP spec); unannotated tools and tools annotated `destructiveHint: true` are filtered out. Set to `false` to opt in to writes — explicit integrator decision, not heuristic-based.
 
 **`type: "rag"`**:
 
@@ -57,6 +65,7 @@ Each connector entry has these common fields:
 - `cluster` (string) — backend URL.
 - `auth` (object) — backend credentials.
 - `indexes` (string[]) — the indexes this connector is scoped to.
+- `language` (string, optional) — natural-language hint about the corpus (e.g. `"fr"`, `"French"`, `"pt-BR + en"`). Surfaced in the retrieve tool's description so the LLM phrases queries in the right language for BM25 (which is lexical — a query in one language won't match a corpus in another without semantic embeddings).
 
 ### Active state and the scope rule
 

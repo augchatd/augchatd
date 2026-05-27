@@ -12,6 +12,12 @@ links:
 
 # Technical contract — `PUT /conversations/:conversation_id/connectors/:descriptive_id`
 
+> [!NOTE] Implementation status
+> Fully implemented on branch `trace-conversations`: request/response
+> shapes, all status codes (204/400/401/404/**503 + `X-Augchatd-Reason:
+> hot-write-failed`**), last-write-wins. The backing store is hot SQLite
+> per (tenant, user) — see [contract-storage-hot](../behavior/contracts/storage-hot.md).
+
 ## Purpose
 
 Sets the active state of one connector **for one conversation**. The change is persisted as part of the conversation (hot SQLite, flushed to cold S3 like any other conversation state) so it survives session re-mints.
@@ -50,9 +56,9 @@ No body. The caller already knows `descriptive_id`, `name`, and `type` (from the
 
 ## Response — failure modes
 
-- `400` — malformed body (missing `active`, wrong type, extra fields).
+- `400` — malformed body. Distinct error tokens: `invalid_json` (body is not valid JSON), `body_must_be_object` (top-level not an object), `only_active_field_allowed` (extra keys present or `active` missing), `active_must_be_boolean` (wrong type).
 - `401` — invalid/expired JWT.
-- `404` — `:conversation_id` unknown for this user, `:descriptive_id` not in this session's resolved scope, **or** the conversation was deleted concurrently. The delete and the rejection are atomic from the caller's point of view: a `204` means the value was committed to a still-live conversation; a `404` means nothing was changed.
+- `404` — `{ "error": "conversation_not_found" }` if `:conversation_id` is unknown for this user, or `{ "error": "<reason>" }` (e.g. `connector_not_in_scope`) if the cid exists but `:descriptive_id` is not in this session's resolved scope, or the conversation was deleted concurrently. PUTs do **not** auto-create the conversation — unlike `POST /chat` (which captures-on-first-observation), this endpoint requires a cid that has already been registered via `POST /conversations` or seen by a prior `POST /chat`.
 - `503` with `X-Augchatd-Reason: hot-write-failed` — the hot SQLite write failed (disk full, file locked, transient I/O error). No state is committed; the client may retry. Distinct from `flush-stalled` (cold-storage stall), which the session may already be in for unrelated reasons.
 
 ## Effect on in-flight chat turns

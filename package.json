@@ -1,0 +1,30 @@
+{
+  "name": "augchatd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-user MCP + RAG chat daemon: provisioned via mTLS, enforced server-side, credentials never seen by the browser.",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build:ui": "cd ui && bun install && bun run build",
+    "dev:ui": "cd ui && bun run dev"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "latest",
+    "@ai-sdk/openai": "^3.0.65",
+    "@aws-sdk/client-s3": "^3.1054.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ai": "latest",
+    "hono": "^4.6.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

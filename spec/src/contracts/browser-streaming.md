@@ -14,7 +14,7 @@ links:
 
 ## Auth
 
-JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md) (production) or [`GET /demo/jwt`](http-get-demo-jwt.md) (demo).
+JWT (Bearer), obtained via the [postMessage handshake](browser-postmessage.md). The parent that supplies the JWT is the `GET /demo/` wrapper in demo (which calls `POST /demo/sessions` server-side) or the integrator's app page in production (which calls [`POST /sessions`](http-post-sessions.md) server-side).
 
 ## Surface (declared minimum)
 
@@ -32,8 +32,29 @@ The browser API supports:
 - list a conversation's connectors with active state — [GET /conversations/:cid/connectors](http-get-conversation-connectors.md)
 - toggle a connector's active state for a conversation — [PUT /conversations/:cid/connectors/:descriptive_id](http-put-conversation-connector-state.md)
 
-> [!NOTE] Assumption
-> The conversation endpoints' exact paths/verbs are an evidence gap until code lands. `POST /conversations` and `DELETE /conversations/:cid` are referenced as established semantics by `contract-connector-toggle` and `adr-0010` (snapshot site, atomic delete) — so those two are effectively settled. The remaining gaps are the listing/history/messages paths (`GET /conversations`, `GET /conversations/:id`, and whether send-message is `POST /chat` vs `POST /conversations/:id/messages`). The connector endpoints **are** specified — see the two technical-contract files linked above.
+> [!NOTE] Status of the conversation endpoints
+> All settled on branch `trace-conversations`:
+> - `POST /conversations` (create) — [http-post-conversations](http-post-conversations.md)
+> - `GET /conversations` (list user's conversations) — [http-get-conversations](http-get-conversations.md)
+> - `DELETE /conversations/:cid` (cascade-delete a conversation) — [http-delete-conversations-cid](http-delete-conversations-cid.md)
+> - `POST /chat` (send a message; the streamed reply uses the protocol below) — [http-post-chat](http-post-chat.md)
+> - `GET /conversations/:cid/messages` (full history for replay/hydration) — [http-get-conversation-messages](http-get-conversation-messages.md)
+>
+> The bundled UI does not surface a conversation-sidebar / delete affordance yet; the endpoints exist so integrators can wire their own.
+
+## URL convention (bundled UI)
+
+The bundled UI keeps the active conversation in the URL using the shape `/c/<conversation_id>`. This is a **UI convention layered on top of the existing JSON contracts** — it does not add HTTP surface beyond `POST /conversations` and `GET /conversations/:cid/messages`.
+
+Behavior:
+
+- **Boot with no path** → `POST /conversations` to mint a UUID, then `history.replaceState("/c/<uuid>")`.
+- **Boot with `/c/<cid>`** → `GET /conversations/:cid/messages` to hydrate. On 404 (unknown cid for this session's `(tenant, user)`), mint a fresh conversation and `replaceState` to the new id.
+- **Chat transport overrides `body.id` to the URL cid** — the assistant-ui-internal `threadListItem.id` stays client-local and never goes on the wire.
+
+**Auth boundary is implicit** via the hot-storage partition `data/<tenantId>/<userId>.sqlite`: a cid owned by a different `(tenant, user)` resolves to `conversation_not_found` (404), so no explicit cross-session check is needed in the routing layer.
+
+Inside an iframe (demo wrapper or production integrator), route changes are mirrored to the parent via the `augchatd:route` postMessage (see [browser-postmessage](browser-postmessage.md)) so a hard reload of the parent URL preserves the conversation.
 
 ## Streaming protocol
 
@@ -42,9 +63,14 @@ The streamed reply uses the **assistant-ui native protocol** = **Vercel AI SDK d
 That stream carries:
 
 - assistant message tokens (incrementally)
+- `reasoning-*` parts carrying the model's reasoning summary, when the active model is a reasoning model (OpenAI `o[1-9]*` / `gpt-5*`; Anthropic `claude` opus / sonnet with thinking). Rendered by the bundled UI as a collapsible "Reasoning" section
 - sanitized tool-call indicators (no credentials, no internal URLs)
 - tool result indicators
+- **`source-document` parts** — one per RAG hit, with `providerMetadata.augchatd = {source_descriptive_id, index, doc_id, score, snippet}`. Rendered as clickable chips by the bundled UI (see [contract-rag-query](../behavior/contracts/rag-query.md))
+- **per-message metadata** — each assistant message carries `metadata.augchatd = {model_id, provider}` identifying which model produced it. Rendered as a per-message chip by the bundled UI (see [contract-session-chat](../behavior/contracts/session-chat.md))
 - final completion signal
+
+The transport holds the connection open across multi-tens-of-seconds silent gaps between frames — reasoning models routinely produce these between tool-call rounds. See [adr-0011](../architecture/adrs/0011-tolerate-reasoning-model-stream-gaps.md).
 
 ## What the browser never sees
 

@@ -1,10 +1,12 @@
 ---
 id: adr-0004-http-sse-mcp-only
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md@e562b2b
     section: "What augchatd does NOT do (stdio)"
+  - source: src/mcp.ts@06313ae
+    section: "StreamableHTTPClientTransport — the only MCP transport instantiated"
 links:
   - relation: supports
     target: contract-mcp-invocation

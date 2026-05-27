@@ -40,7 +40,7 @@ Given an authenticated end user "user_42" in our app
              auth:           { bearer: "<rag-token>" },
              indexes:        ["engineering-docs"] }
          ],
-         storage: { s3: "s3://.../bucket/" } }
+         storage: { s3: { endpoint, region, bucket, access_key_id, secret_access_key } } }
  Then we receive { session_id, jwt, expires_at }
   And nothing else has happened on user_42's behalf yet (no LLM call, no connector call)
 ```

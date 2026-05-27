@@ -1,10 +1,16 @@
 ---
 id: adr-0009-react-vite-bundled-ui
 type: adr
-status: proposed
+status: current
 evidence:
   - source: README.md
     section: "Status (stack listing)"
+  - source: ui/package.json@06313ae
+    section: "react ^18, vite ^5, @assistant-ui/react, tailwindcss ^3"
+  - source: ui/vite.config.ts@06313ae
+    section: "Vite build → ui/dist consumed by src/routes/static-ui.ts"
+  - source: ui/src/App.tsx@06313ae
+    section: "Bundled UI entry point"
 links:
   - relation: supports
     target: req-007-bundled-ui
@@ -51,3 +57,13 @@ Routing inside the UI uses a small client-side library (e.g. `react-router`); th
 ## Note on choice of routing / state libraries
 
 This ADR commits to React + Vite + static output. It does **not** commit to specific choices of router, state management, or styling — those are implementation details inside the UI subproject. They will be recorded as comments in code when the UI is built.
+
+## Realized choices (post-implementation)
+
+The UI subproject landed on branch `impl-demo-mode` with the following stack. Recorded here for posterity; future swaps within the same family (e.g. Tailwind v3 → v4) do not require an ADR revision.
+
+- **Styling: Tailwind CSS v3 utility-first.** No CSS-in-JS, no styled-components.
+- **Theme: CSS variables (shadcn-style).** Light is the `:root` default; dark is `[data-theme="dark"]` override. The bundled UI sets the attribute on the document root from the value supplied via the `postMessage` handshake (per [contract-ui-handshake](../../behavior/contracts/ui-handshake.md)).
+- **Component primitives: `@assistant-ui/react` primitives composed manually** (`ThreadPrimitive`, `MessagePrimitive`, `ComposerPrimitive`, etc.). No Radix / React Aria wrappers — the bundled UI styles the primitives directly with Tailwind utilities.
+- **Routing: client-side via `window.history.replaceState`** (no `react-router` — the convention `/c/<conversation_id>` is the entire surface; see [contract-ui-handshake#augchatd:route](../../contracts/browser-postmessage.md)).
+- **Markdown rendering: `react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex` + `rehype-highlight` + `rehype-raw` + `rehype-sanitize`** (with an extended schema allowing inline SVG). See [contract-ui-rendering](../../behavior/contracts/ui-rendering.md) for the full renderer catalog.

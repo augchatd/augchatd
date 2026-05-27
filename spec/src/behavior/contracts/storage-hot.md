@@ -19,6 +19,49 @@ links:
 
 # Contract — Hot storage (embedded SQLite, one DB per (tenant, user))
 
+## Identifier alphabet (load-bearing — affects the filesystem layout)
+
+`tenant_id` and `user_id` MUST match `^[a-zA-Z0-9._-]{1,100}$` to be accepted by augchatd. Identifiers outside that set are rejected at session creation (the demo loader emits `"user_id" must match ...` and refuses to boot; production `POST /sessions` will return 400 `invalid_user_id` / `invalid_tenant_id` with the same alphabet rule).
+
+The constraint exists because the identifier lands in a filesystem path (`data/<tenantId>/<userId>.sqlite`). The earlier design silently sanitized invalid chars via `sanitize()` in `src/storage.ts`; that converted a path-traversal problem into a silent-collision problem (two distinct `user_id`s landing in one file). Rejecting up front makes the validated form also the on-disk form. The `sanitize()` helper remains in code as defense-in-depth.
+
+> [!NOTE] Implementation status (partial)
+> Implemented on branch `trace-conversations` for the demo path:
+>
+> - Layout `<AUGCHATD_DATA_DIR>/<tenantId>/<userId>.sqlite` with `bun:sqlite`
+>   (`PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL` — the
+>   WAL-appropriate setting; trades a tiny crash-window for throughput vs.
+>   `synchronous = FULL`).
+> - Schema covers `conversation` (id, session_id, model_id_override),
+>   `connector_state` (the canonical per-conversation active map), and
+>   `message` (UIMessage history, `parts_json` + `metadata_json` — the
+>   metadata column carries per-assistant-message provenance
+>   `{model_id, provider}` rendered by the UI as a model chip).
+> - Writes are atomic; failures throw `HotWriteError` and the chat /
+>   connectors / model handlers surface them as `503
+>   X-Augchatd-Reason: hot-write-failed` per spec.
+> - `data/` is gitignored.
+>
+> **Still PENDING:**
+>
+> - **Flush to cold S3** ([contract-storage-flush](storage-flush.md)) — not implemented.
+> - **Multi-session file lifecycle** — the demo runs one process with one
+>   session, so file-removal-after-all-sessions-end is not exercised.
+>   Will land with prod `POST /sessions` + session bookkeeping.
+> - **Production routing** (lazy-open per session for arbitrary tenants/users)
+>   — the demo opens one DB at boot and reuses it. The `openHotDb` helper
+>   already keys by `(tenant, user)`; prod just needs to call it on session
+>   bind instead of at boot.
+> - **UI-side message hydration on page reload** — RESOLVED for the
+>   demo path. The bundled UI uses `/c/<conversation_id>` as the URL
+>   convention: on boot it parses the path, GETs
+>   `/conversations/<cid>/messages` to hydrate the runtime, and falls
+>   back to mint+`replaceState` on 404. The auth boundary stays
+>   implicit (per-`(tenant, user)` SQLite partition). Tracked as item
+>   10 in augchatd/augchatd#5 for spec write-up.
+>
+> Status stays `proposed` (no test-pointers yet; partial implementation).
+
 ## Promise
 
 While any session for a given (tenant, user) is live, that user's conversation state lives in an **internal SQLite database** managed by augchatd, using Bun's embedded SQLite.
@@ -41,6 +84,12 @@ Each conversation in the file holds, alongside its messages, the **per-conversat
 - A session ending while another for the same user remains alive does **not** remove the file.
 - Process restart preserves the hot DB (it is on disk, not memory-only).
 
+## Conversations are scoped to `(tenant, user)`, not to a session
+
+A user's conversations live in their `<tenantId>/<userId>.sqlite` file and are observable to **every** session that authenticates as the same `(tenantId, userId)`. A second session minted for the same user — refresh after JWT expiry, second browser tab, mobile re-open, integrator-driven re-mint after a forced delete — sees the prior conversations as soon as it authenticates; `GET /conversations/:cid/messages` returns the saved history and the conversation's per-connector active state is intact. There is **no per-session isolation** within a `(tenant, user)`.
+
+This is the contract that makes "resume after disconnect" work end-to-end. The implicit cross-session-share is also the auth boundary for the `/c/<cid>` URL: a cid that exists for a different `(tenant, user)` resolves to `conversation_not_found` (404) because the SQLite partition does not contain that row — no explicit cross-session check is needed in routing. Integrators who need session-level isolation should provision distinct `user_id` values; augchatd does not deduplicate or merge across users.
+
 ## Canonical row, no per-session cache
 
 A single conversation's per-connector active state (and the messages alongside it) lives in **one** row per `(cid, descriptive_id)` in the user's SQLite file. `PUT /conversations/:cid/connectors/:descriptive_id` writes to that canonical row; idle/disconnect flush reads the canonical row at flush time. Implementations MUST NOT carry a per-session in-memory cache of the active map that flush could write back over a recent `PUT`. This makes multi-device toggles (same user, two device sessions, one toggling while the other is about to flush) behave under the same last-write-wins rule as concurrent toggles on a single device.
@@ -48,6 +97,10 @@ A single conversation's per-connector active state (and the messages alongside i
 ## Hot-write failure surface
 
 A hot SQLite write failure during a `PUT /conversations/:cid/connectors/:descriptive_id` or during a first-observation snapshot surfaces to the caller as `503` with `X-Augchatd-Reason: hot-write-failed`. No partial state is committed. This is distinct from the cold-flush stall (`X-Augchatd-Reason: flush-stalled`, see [storage-flush](storage-flush.md)) — they can co-occur on a degraded node but they have different causes and different retry strategies.
+
+## Schema evolution
+
+The schema lives in `src/storage.ts` as a single `CREATE TABLE IF NOT EXISTS …` block plus a `MIGRATIONS` array of forward-only statements (`ALTER TABLE … ADD COLUMN …`). On every `openHotDb`, the block runs (idempotent for already-created tables) and each migration runs inside a swallowing try/catch — SQLite has no `ADD COLUMN IF NOT EXISTS`, so the second-run "duplicate column" error is the expected idempotency signal. Adding a column means appending one statement to `MIGRATIONS`; dropping a column is not supported (forward-only). The schema is not versioned (no `schema_version` row); on-disk databases either have the column or get it on next boot.
 
 ## Non-promises
 

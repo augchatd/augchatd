@@ -31,7 +31,7 @@ Canonical terms used across the spec. Preserve these names; do not paraphrase.
 | **flush** | Move a conversation from hot to cold. Triggered by session disconnect or 5 minutes of inactivity. |
 | **hydrate** | Reload a conversation from cold storage on resume when no longer in hot. |
 | **tool-use loop** | The server-side cycle of (LLM call → tool/RAG invocation → result → LLM call) that runs per chat turn. |
-| **demo mode** | Single-tenant boot from `AUGCHATD_MODE=demo` env vars. Bypasses mTLS and `POST /sessions`. For local testing and public demos only. |
+| **demo mode** | Single-tenant boot from `AUGCHATD_MODE=demo` with the session config loaded from `local/demo_session.json`. Bypasses mTLS and `POST /sessions`. For local testing and public demos only. |
 | **production mode** | Default. mTLS-protected `POST /sessions` from the integrator's backend. |
 
 ## Aliases / informal terms to avoid

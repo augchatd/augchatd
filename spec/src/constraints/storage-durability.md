@@ -12,6 +12,28 @@ links:
 
 # Constraint — Storage durability
 
+> [!NOTE] Implementation status (shipped)
+> Implemented on branch `trace-conversations`:
+>
+> - **Retry policy**: `src/flush-scheduler.ts` runs capped exponential
+>   backoff (1s → 60s, default; `AUGCHATD_FLUSH_STALLED_MS` overrides
+>   the stall threshold).
+> - **Read-only mode**: `SessionRecord.readonly_flush_stalled` is set
+>   when failures exceed the threshold. `chatHandler` returns 503 with
+>   `X-Augchatd-Reason: flush-stalled`; the bundled UI's chat transport
+>   detects the header and replaces the composer with the
+>   "Service temporarily read-only — your messages are preserved"
+>   banner (`<FlushStalledBanner />` in `ui/src/App.tsx`). Auto-recovery:
+>   the next successful flush clears the flag, the next /chat returns
+>   200, and the UI re-renders the composer.
+> - **Hot-not-dropped**: `flush-scheduler.ts` only marks a conversation
+>   `cleanlyFlushed = true` on `uploadFlush` success; eviction
+>   (`closeAndRemoveHotDb`) is gated on that flag plus zero live
+>   sessions for `(tenant, user)`.
+>
+> The rules below are now backed by code. Tests are still missing — when
+> they land, this NOTE can come off and the file promotes to `current`.
+
 ## Hard rules
 
 - **Hot is not dropped until cold has it.** A flush failure does not delete the hot copy.

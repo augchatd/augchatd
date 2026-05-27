@@ -20,7 +20,7 @@ curl -X POST https://augchatd.your-infra/sessions \
       { "descriptive_id": "mcp_github",  "name": "GitHub (user OAuth)", "type": "mcp", "default_active": true,
         "url": "https://your-mcp/", "auth": { "bearer": "..." } }
     ],
-    "storage":     { "s3": "s3://AKIA...@your-bucket/" }
+    "storage":     { "s3": { "endpoint": "https://s3.us-east-1.amazonaws.com", "region": "us-east-1", "bucket": "your-bucket", "access_key_id": "AKIA...", "secret_access_key": "..." } }
   }'
 # → { "session_id": "...", "jwt": "eyJ...", "expires_at": "..." }
 ```
@@ -77,23 +77,27 @@ If you've spent two weeks gluing a per-user MCP behind the AI SDK and lost confi
 
 ## Quick Start (demo mode)
 
-Try augchatd end-to-end without standing up a control plane or mTLS infrastructure. Demo mode loads a single fixed session from environment variables at boot.
+Try augchatd end-to-end without standing up a control plane or mTLS infrastructure. Demo mode loads a single fixed session from a JSON file on disk — the same shape an integrator would `POST` to `/sessions` in production, just read from a file instead of an HTTPS body.
 
 ```bash
+# 1. Copy the template and fill in your model API key (+ optional S3 + connectors).
+cp local/demo_session.json.example local/demo_session.json
+${EDITOR:-vi} local/demo_session.json
+
+# 2. Boot.
 docker run -p 8080:8080 \
   -e AUGCHATD_MODE=demo \
-  -e DEMO_MODEL_PROVIDER=anthropic \
-  -e DEMO_MODEL_ID=claude-opus-4-7 \
-  -e DEMO_MODEL_API_KEY=sk-ant-... \
-  -e DEMO_SYSTEM_PROMPT="You are a helpful assistant." \
+  -v "$PWD/local/demo_session.json:/app/local/demo_session.json:ro" \
   augchatd/augchatd   # image TBD — not yet published
 
-open http://localhost:8080
+open http://localhost:8080/demo/
 ```
 
-Add `DEMO_CONNECTORS` (a JSON string, same shape as the production payload's `connectors[]`) **or** `DEMO_CONNECTORS_FILE` (path to a JSON file with the same shape) to enable connectors — the file variant avoids leaking credentials through shell history and committed compose files. Add `DEMO_S3_URI` to enable cold storage (without it the demo runs hot-only and history is lost on restart, which is fine for local demos). The browser loads the bundled UI from the same port, fetches a session JWT from `GET /demo/jwt`, then chats normally.
+The JSON carries the model provider + key, system prompt, optional S3 credentials (omit for hot-only — history lost on restart, fine for local demos), and optional `connectors[]` (typed MCP / RAG, same shape as the production payload). `GET /demo/` serves a small "fake integrator" wrapper that runs the same iframe + postMessage handshake an integrator does in production — it `POST`s `/demo/sessions` for the JWT and hands it to the iframe.
 
-Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, holds credentials in the process environment, and **does not accept `POST /sessions`** — the demo session is bound at process boot from env vars, not minted per request (calls to `POST /sessions` or `DELETE /sessions/:id` return 404). The bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend, shown above) is unchanged when you graduate; the same binary serves both modes.
+Working from a checkout instead of docker? `./run-dev-local.sh` boots the same path against the same file. See [CONTRIBUTING.md](CONTRIBUTING.md) → "Local development".
+
+Demo mode is for local testing and public demos only. It bypasses mTLS, runs single-tenant, holds credentials in process memory (loaded once from disk at boot), and **does not accept `POST /sessions`** — sessions are minted by `POST /demo/sessions` from the boot-time config instead (calls to the mTLS `POST /sessions` or `DELETE /sessions/:id` return 404). The bundled UI displays a **"Demo session — not authenticated"** banner so anyone using it can see at a glance that they are not in production. The production path (mTLS + `POST /sessions` from your backend) is unchanged when you graduate; the same binary serves both modes — and exercises the same iframe handshake every day in dev.
 
 augchatd serves `GET /healthz` on the same origin in both modes, returning `{ "mode": "demo" | "prod", "status": "ok" }`. The `mode` field is the safety net for accidental demo deploys — fail your deploy if a production health check reports `"mode": "demo"`.
 
